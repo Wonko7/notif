@@ -31,10 +31,11 @@ fn main() -> Result<(), failure::Error> {
 
     // Retreive the first reply.
     let mut msg = client.recv_msg()?;
+    println!("ah> {}", msg.to_str()?);
     // And the second.
     client.recv(&mut msg)?;
 
+    println!("Hello, world! {}", msg.to_str()?);
 
-    println!("Hello, world!");
     Ok(())
 }
