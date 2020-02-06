@@ -1,4 +1,4 @@
-use failure::Error;
+//use failure::Error;
 
 pub enum Role {
     Sender,
@@ -11,16 +11,16 @@ pub struct Config {
 
 
 impl Config {
-    pub fn new(mut args: std::env::Args) -> Result<Config, &'static str> {
+    pub fn new(mut args: std::env::Args) -> Result<Config, failure::Error> {
         args.next();
 
         let role = match args.next() {
-            None            => return Err("Didn't get a role as arg1"),
+            None            => return Err(failure::err_msg("Didn't get a role as arg1")),
             Some(argument)  => match argument.as_str() {
                 "--sender"     => Role::Sender,
                 "--aggregator" => Role::Aggregator,
                 "--sink"       => Role::Sink,
-                _              => return Err(format!("could not understand role {}", argument).as_str())
+                _              => return Err(failure::format_err!("could not understand role {}", argument))
             }
         };
 
@@ -30,7 +30,7 @@ impl Config {
 
 pub fn run_sender() -> Result<(), failure::Error> {
     if 1 == 2 {
-        return Err("lol");
+        return Err(failure::err_msg("lol"));
     }
     println!("sender");
     Ok(())
