@@ -2,7 +2,7 @@
 use std::thread;
 use std::time::Duration;
 
-
+#[derive(PartialEq)]
 pub enum Role {
     Sender,
     Aggregator,
@@ -10,6 +10,7 @@ pub enum Role {
 }
 pub struct Config {
     pub role: Role,
+    pub id: String,
 }
 
 
@@ -27,7 +28,17 @@ impl Config {
             }
         };
 
-        Ok(Config { role })
+        let id = if Role::Sink == role   {
+            match args.next() {
+                None            => return Err(failure::err_msg("expecting sink ID string.")),
+                Some(argument)  => argument
+            }
+        } else {
+            String::from("unused")
+        };
+
+
+        Ok(Config { role, id })
     }
 }
 
@@ -84,15 +95,15 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
     Ok(())
 }
 
-pub fn run_sink() -> Result<(), failure::Error> {
-    println!("sink");
+pub fn run_sink(config: Config) -> Result<(), failure::Error> {
+    println!("sink with id: {}", config.id);
     Ok(())
 }
 
 pub fn run(config: Config) -> Result<(), failure::Error> {
     match config.role {
-        Role::Sender => run_sender(),
+        Role::Sender     => run_sender(),
         Role::Aggregator => run_aggregator(),
-        Role::Sink => run_sink(),
+        Role::Sink       => run_sink(config),
     }
 }
