@@ -1,41 +1,32 @@
-use libzmq::{prelude::*, *};
-use std::convert::TryInto;
+use std::env;
+use std::process;
+use std::error::Error;
+use notifier::Config;
 
-fn main() -> Result<(), failure::Error> {
-    // Use a system assigned port.
-    let addr: TcpAddr = "127.0.0.1:*".try_into()?;
+fn main() -> Result<(), failure::Error>{
+    let args: Vec<String> = env::args().collect();
 
-    let server = ServerBuilder::new()
-        .bind(addr)
-        .build()?;
+    let config = Config::new(&args)?;
 
-    // Retrieve the addr that was assigned.
-    let bound = server.last_endpoint()?;
+    //println!("With text:\n{}", contents);
+    if 1 == 2 {
+        process::exit(5);
+    }
 
-    let client = ClientBuilder::new()
-        .connect(bound)
-        .build()?;
-
-    // Send a string request.
-    client.send("tell me something")?;
-
-    // Receive the client request.
-    let msg = server.recv_msg()?;
-    let id = msg.routing_id().unwrap();
-
-    // Reply to the client.
-    server.route("it takes 224 bits to store a i32 in java", id)?;
-
-    // We can reply as much as we want.
-    server.route("also don't talk to me", id)?;
-
-    // Retreive the first reply.
-    let mut msg = client.recv_msg()?;
-    println!("ah> {}", msg.to_str()?);
-    // And the second.
-    client.recv(&mut msg)?;
-
-    println!("Hello, world! {}", msg.to_str()?);
-
-    Ok(())
+    //Ok(());
+    minigrep::run(config)
 }
+
+// fn main() -> Result<(), failure::Error> {
+//     let config = Config::new(env::args()).unwrap_or_else(|err| {
+//         eprintln!("Problem parsing arguments: {}", err);
+//         process::exit(1);
+//     });
+// //     let config = Config::new(&args)?;
+// //
+//
+//     if let Err(e) = minigrep::run(config) {
+//         eprintln!("Application error: {}", e);
+//         process::exit(1);
+//     }
+// }

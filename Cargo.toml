@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 libzmq = "0.2.1"
+failure = "0.1.6"
