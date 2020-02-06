@@ -1,4 +1,7 @@
 //use failure::Error;
+use std::thread;
+use std::time::Duration;
+
 
 pub enum Role {
     Sender,
@@ -35,27 +38,16 @@ pub fn run_sender() -> Result<(), failure::Error> {
     //socket to talk to clients
     let publisher = context.socket(zmq::PUB).unwrap();
     publisher.set_sndhwm(1_100_000).expect("failed setting hwm");
-    publisher
-        .bind("tcp://*:5561")
-        .expect("failed binding publisher");
+    publisher.connect("tcp://0:5561")?;
 
-    //socket to receive signals
-    let syncservice = context.socket(zmq::REP).unwrap();
-    syncservice
-        .bind("tcp://*:5562")
-        .expect("failed binding syncservice");
-
-    //get syncronization from subscribers
-    println!("Waiting for subscribers");
-    for _ in 0..10 {
-        syncservice.recv_msg(0).expect("failed receiving sync");
-        syncservice.send("", 0).expect("failed sending sync");
-    }
     //now broadcast 1M updates followed by end
     println!("Broadcasting messages");
-    for _ in 0..1_000_000 {
+    for i in 0..1_000_000 {
+        println!("{}", i);
         publisher.send("Rhubarb", 0).expect("failed broadcasting");
+        thread::sleep(Duration::from_millis(500));
     }
+    Ok(())
 }
 
 pub fn run_aggregator() -> Result<(), failure::Error> {
@@ -64,36 +56,32 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
     let context = zmq::Context::new();
 
     //first connect our subscriber
-    let subscriber = context.socket(zmq::SUB).unwrap();
-    subscriber
-        .connect("tcp://localhost:5561")
-        .expect("failed connecting subscriber");
-    subscriber
-        .set_subscribe(b"")
-        .expect("failed setting subscription");
-    thread::sleep(Duration::from_millis(1));
-
-    //second sync with publisher
-    let syncclient = context.socket(zmq::REQ).unwrap();
-    syncclient
-        .connect("tcp://localhost:5562")
-        .expect("failed connect syncclient");
-    syncclient.send("", 0).expect("failed sending sync request");
-    syncclient.recv_msg(0).expect("failed receiving sync reply");
+    let subscriber = context.socket(zmq::SUB)?;
+    println!("1");
+    subscriber.bind("tcp://0:5561")?;
+    println!("2");
+    subscriber.set_subscribe(b"")?;
+    println!("3");
 
     //third get our updates and report how many we got
     let mut update_nbr = 0;
     loop {
-        let message = subscriber
-            .recv_string(0)
-            .expect("failed receiving update")
-            .unwrap();
+        let message = match subscriber.recv_string(0)? {
+            Ok(m) => m,
+            Err(_) => {
+                println!("ignoring non utf8");
+                continue;
+            }
+        };
+
+        println!("{}", message);
         if message == "END" {
             break;
         }
         update_nbr += 1;
     }
     println!("Received {} updates", update_nbr);
+    Ok(())
 }
 
 pub fn run_sink() -> Result<(), failure::Error> {
