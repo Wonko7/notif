@@ -47,7 +47,7 @@ pub fn run_sender() -> Result<(), failure::Error> {
     let context = zmq::Context::new();
 
     //socket to talk to clients
-    let publisher = context.socket(zmq::PUB).unwrap();
+    let publisher = context.socket(zmq::PUB)?;
     publisher.set_sndhwm(1_100_000).expect("failed setting hwm");
     publisher.connect("tcp://0:5561")?;
 
@@ -66,13 +66,18 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
 
     let context = zmq::Context::new();
 
-    //first connect our subscriber
+    // recv notifs on subscriber
     let subscriber = context.socket(zmq::SUB)?;
-    println!("1");
     subscriber.bind("tcp://0:5561")?;
-    println!("2");
     subscriber.set_subscribe(b"")?;
-    println!("3");
+
+    // recv yield requests:
+    let sink_yield = context.socket(zmq::REP)?;
+    sink_yield.bind("tcp://0:5562")?;
+
+    // publish notif to single id sink:
+    let sink_pub = context.socket(zmq::PUB)?;
+    sink_pub.bind("tcp://0:5563")?;
 
     //third get our updates and report how many we got
     let mut update_nbr = 0;
