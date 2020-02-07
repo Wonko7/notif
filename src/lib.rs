@@ -21,9 +21,9 @@ impl Config {
         let role = match args.next() {
             None           => return Err(failure::err_msg("Didn't get a role as arg1")),
             Some(argument) => match argument.as_str() {
-                "--sender" => Role::Sender,
-                "--server" => Role::Server,
-                "--client" => Role::Notifier, // WIP not sure about names.
+                "--sender"   => Role::Sender,
+                "--server"   => Role::Server,
+                "--notifier" => Role::Notifier, // WIP not sure about names.
                 _          => return Err(failure::format_err!("could not understand role {}", argument))
             }
         };
@@ -40,7 +40,7 @@ impl Config {
 
 pub fn run_sender() -> Result<(), failure::Error> {
     // for testing only.
-    // this will just forward argv to the socket & exit.
+    // this will just send argv to the server & exit.
 
     println!("Sender");
     let context = zmq::Context::new();
@@ -95,6 +95,7 @@ pub fn run_server() -> Result<(), failure::Error> {
                 Err(_) => continue
             };
 
+            // send notif to currently elected notifier:
             outgoing_notif.send(&notifier_id, zmq::SNDMORE)?;
             outgoing_notif.send(&message[..], 0)?;
         }
@@ -104,6 +105,7 @@ pub fn run_server() -> Result<(), failure::Error> {
                 Ok(id) =>  {
                     println!("setting notifier notif subscribe to: {}", id);
                     // sink_client_id = id.as_bytes().clone();
+                    // yield to the new notifier:
                     notifier_id = id.clone();
                     notifier_yield.send("ok man", 0)?;
                 },
@@ -138,6 +140,8 @@ pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
             Ok(m)  => m,
             Err(_) => continue
         };
+        // linux: execve notify-send.
+        // mac: ??
         println!("END GAYME {}", message);
     }
 }
