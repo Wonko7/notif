@@ -28,15 +28,11 @@ impl Config {
             }
         };
 
-        let id = if Role::Sink == role   {
-            match args.next() {
-                None            => return Err(failure::err_msg("expecting sink ID string.")),
-                Some(argument)  => argument
-            }
-        } else {
-            String::from("unused")
+        let id = match (&role, args.next()) {
+                (Role::Sink, None)           => return Err(failure::err_msg("expecting sink ID string.")),
+                (Role::Sink, Some(argument)) => argument,
+                _                            => String::from("unused"),
         };
-
 
         Ok(Config { role, id })
     }
@@ -67,41 +63,69 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
     let context = zmq::Context::new();
 
     // recv notifs on subscriber
-    let subscriber = context.socket(zmq::SUB)?;
-    subscriber.bind("tcp://0:5561")?;
-    subscriber.set_subscribe(b"")?;
+    let incoming_notif = context.socket(zmq::SUB)?;
+    incoming_notif.bind("tcp://0:5561")?;
+    incoming_notif.set_subscribe(b"")?;
 
     // recv yield requests:
     let sink_yield = context.socket(zmq::REP)?;
     sink_yield.bind("tcp://0:5562")?;
 
     // publish notif to single id sink:
-    let sink_pub = context.socket(zmq::PUB)?;
-    sink_pub.bind("tcp://0:5563")?;
+    let sink_notif = context.socket(zmq::PUB)?;
+    sink_notif.bind("tcp://0:5563")?;
 
-    //third get our updates and report how many we got
-    let mut update_nbr = 0;
+
     loop {
-        let message = match subscriber.recv_string(0)? {
-            Ok(m) => m,
-            Err(_) => {
-                println!("ignoring non utf8");
-                continue;
-            }
-        };
+        let mut items = [
+            incoming_notif.as_poll_item(zmq::POLLIN),
+            sink_yield.as_poll_item(zmq::POLLIN),
+        ];
+        zmq::poll(&mut items, -1)?;
 
-        println!("{}", message);
-        if message == "END" {
-            break;
+        // example ref use this: if items[0].is_readable() && receiver.recv(&mut msg, 0).is_ok() {
+        if items[0].is_readable() {
+            let message = match incoming_notif.recv_string(0)? {
+                Ok(m) =>  m,
+                Err(_) => continue
+            };
+
+            sink_notif.send(&message[..], 0)?;
         }
-        update_nbr += 1;
+
+        if items[1].is_readable() {
+            match sink_yield.recv_string(0)? {
+                Ok(id) =>  {
+                    println!("setting sink notif subscribe to: {}", id);
+                    sink_notif.set_subscribe(id.as_bytes())?;
+                    sink_yield.send("ok man", 0)?;
+                },
+                Err(_) => continue
+            };
+        }
     }
-    println!("Received {} updates", update_nbr);
-    Ok(())
 }
 
 pub fn run_sink(config: Config) -> Result<(), failure::Error> {
     println!("sink with id: {}", config.id);
+
+    let context = zmq::Context::new();
+
+    // register and ask for others to yield:
+    let gimme = context.socket(zmq::REQ)?;
+    gimme.connect("tcp://0:5562")?;
+    gimme.send(&config.id[..], 0)?;
+
+    let a_ok = gimme.recv_string(0)?;
+    println!("got answer: {}", a_ok.unwrap());
+
+
+    // publish notif to single id sink:
+    let sink = context.socket(zmq::SUB)?;
+    sink.connect("tcp://0:5563")?;
+    sink.set_subscribe(config.id.as_bytes())?;
+
+    // loop around sink.
     Ok(())
 }
 
