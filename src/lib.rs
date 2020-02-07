@@ -61,6 +61,8 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
     println!("Aggregator");
 
     let context = zmq::Context::new();
+    //let mut sink_client_id = "".as_bytes();
+    let mut sink_client_id = String::from("");
 
     // recv notifs on subscriber
     let incoming_notif = context.socket(zmq::SUB)?;
@@ -90,6 +92,7 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
                 Err(_) => continue
             };
 
+            sink_notif.send(&sink_client_id[..], zmq::SNDMORE)?;
             sink_notif.send(&message[..], 0)?;
         }
 
@@ -97,7 +100,8 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
             match sink_yield.recv_string(0)? {
                 Ok(id) =>  {
                     println!("setting sink notif subscribe to: {}", id);
-                    sink_notif.set_subscribe(id.as_bytes())?;
+                    // sink_client_id = id.as_bytes().clone();
+                    sink_client_id = id.clone();
                     sink_yield.send("ok man", 0)?;
                 },
                 Err(_) => continue
