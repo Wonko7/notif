@@ -1,4 +1,3 @@
-//use failure::Error;
 use std::thread;
 use std::time::Duration;
 
@@ -24,7 +23,7 @@ impl Config {
                 "--sender"   => Role::Sender,
                 "--server"   => Role::Server,
                 "--notifier" => Role::Notifier, // WIP not sure about names.
-                _          => return Err(failure::format_err!("could not understand role {}", argument))
+                _            => return Err(failure::format_err!("could not understand role {}", argument))
             }
         };
 
@@ -88,10 +87,10 @@ pub fn run_server() -> Result<(), failure::Error> {
         ];
         zmq::poll(&mut items, -1)?;
 
-        // example ref use this: if items[0].is_readable() && receiver.recv(&mut msg, 0).is_ok() {
+        // example ref uses this: if items[0].is_readable() && receiver.recv(&mut msg, 0).is_ok() {
         if items[0].is_readable() {
             let message = match incoming_notif.recv_string(0)? {
-                Ok(m) =>  m,
+                Ok(m)  => m,
                 Err(_) => continue
             };
 
@@ -102,9 +101,8 @@ pub fn run_server() -> Result<(), failure::Error> {
 
         if items[1].is_readable() {
             match notifier_yield.recv_string(0)? {
-                Ok(id) =>  {
-                    println!("setting notifier notif subscribe to: {}", id);
-                    // sink_client_id = id.as_bytes().clone();
+                Ok(id) => {
+                    println!("setting notifier subscribe to: {}", id);
                     // yield to the new notifier:
                     notifier_id = id.clone();
                     notifier_yield.send("ok man", 0)?;
