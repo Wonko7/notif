@@ -89,29 +89,23 @@ pub fn run_server() -> Result<(), failure::Error> {
 
         // example ref uses this: if items[0].is_readable() && receiver.recv(&mut msg, 0).is_ok() {
         if items[0].is_readable() {
-            let message = match incoming_notif.recv_string(0)? {
-                Ok(m)  => m,
-                Err(_) => continue
+            if let Ok(message) = incoming_notif.recv_string(0)? {
+                // forward notif to currently elected notifier:
+                outgoing_notif.send(&notifier_id, zmq::SNDMORE)?;
+                outgoing_notif.send(&message[..], 0)?;
             };
-
-            // send notif to currently elected notifier:
-            outgoing_notif.send(&notifier_id, zmq::SNDMORE)?;
-            outgoing_notif.send(&message[..], 0)?;
         }
 
         if items[1].is_readable() {
-            match notifier_yield.recv_string(0)? {
-                Ok(id) => {
-                    println!("setting notifier subscribe to: {}", id);
-                    // yield to the new notifier:
-                    notifier_id = id.clone();
-                    notifier_yield.send("ok man", 0)?;
-                },
-                Err(_) => continue
+            if let Ok(id) = notifier_yield.recv_string(0)? {
+                println!("setting notifier subscribe to: {}", id);
+                // yield to the new notifier:
+                notifier_id = id.clone();
+                notifier_yield.send("ok man", 0)?;
             };
         }
     }
-}
+    }
 
 pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
     println!("notifier with id: {}", config.id);
@@ -134,13 +128,11 @@ pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
 
     // loop around incoming_notif.
     loop {
-        let message = match incoming_notif.recv_string(0)? {
-            Ok(m)  => m,
-            Err(_) => continue
+        if let Ok(message) = incoming_notif.recv_string(0)? {
+            println!("ENDGAYME {}", message);
+            // linux: execve notify-send.
+            // mac: ??
         };
-        // linux: execve notify-send.
-        // mac: ??
-        println!("END GAYME {}", message);
     }
 }
 
