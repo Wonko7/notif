@@ -125,12 +125,18 @@ pub fn run_sink(config: Config) -> Result<(), failure::Error> {
 
 
     // publish notif to single id sink:
-    let sink = context.socket(zmq::SUB)?;
-    sink.connect("tcp://0:5563")?;
-    sink.set_subscribe(config.id.as_bytes())?;
+    let incoming_notif = context.socket(zmq::SUB)?;
+    incoming_notif.connect("tcp://0:5563")?;
+    incoming_notif.set_subscribe(config.id.as_bytes())?;
 
-    // loop around sink.
-    Ok(())
+    // loop around incoming_notif.
+    loop {
+        let message = match incoming_notif.recv_string(0)? {
+            Ok(m)  => m,
+            Err(_) => continue
+        };
+        println!("END GAYME {}", message);
+    }
 }
 
 pub fn run(config: Config) -> Result<(), failure::Error> {
