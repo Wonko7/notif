@@ -4,9 +4,9 @@ use std::time::Duration;
 
 #[derive(PartialEq)]
 pub enum Role {
-    Sender,
-    Aggregator,
-    Sink,
+    Sender,      // this is used to create a notification and send it to the server.
+    Server,      // receives notifs from multiple Senders forwards them to ONE unique Notifier
+    Notifier,
 }
 pub struct Config {
     pub role: Role,
@@ -19,19 +19,19 @@ impl Config {
         args.next();
 
         let role = match args.next() {
-            None            => return Err(failure::err_msg("Didn't get a role as arg1")),
-            Some(argument)  => match argument.as_str() {
-                "--sender"     => Role::Sender,
-                "--aggregator" => Role::Aggregator,
-                "--sink"       => Role::Sink,
-                _              => return Err(failure::format_err!("could not understand role {}", argument))
+            None           => return Err(failure::err_msg("Didn't get a role as arg1")),
+            Some(argument) => match argument.as_str() {
+                "--sender" => Role::Sender,
+                "--server" => Role::Server,
+                "--client" => Role::Notifier, // WIP not sure about names.
+                _          => return Err(failure::format_err!("could not understand role {}", argument))
             }
         };
 
         let id = match (&role, args.next()) {
-                (Role::Sink, None)           => return Err(failure::err_msg("expecting sink ID string.")),
-                (Role::Sink, Some(argument)) => argument,
-                _                            => String::from("unused"),
+                (Role::Notifier, None)           => return Err(failure::err_msg("expecting notifier ID string.")),
+                (Role::Notifier, Some(argument)) => argument,
+                _                                => String::from("unused"),
         };
 
         Ok(Config { role, id })
@@ -39,6 +39,9 @@ impl Config {
 }
 
 pub fn run_sender() -> Result<(), failure::Error> {
+    // for testing only.
+    // this will just forward argv to the socket & exit.
+
     println!("Sender");
     let context = zmq::Context::new();
 
@@ -57,12 +60,12 @@ pub fn run_sender() -> Result<(), failure::Error> {
     Ok(())
 }
 
-pub fn run_aggregator() -> Result<(), failure::Error> {
-    println!("Aggregator");
+pub fn run_server() -> Result<(), failure::Error> {
+    println!("Server");
 
     let context = zmq::Context::new();
-    //let mut sink_client_id = "".as_bytes();
-    let mut sink_client_id = String::from("");
+    //let mut notifier_id = "".as_bytes();
+    let mut notifier_id = String::from("");
 
     // recv notifs on subscriber
     let incoming_notif = context.socket(zmq::SUB)?;
@@ -70,18 +73,18 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
     incoming_notif.set_subscribe(b"")?;
 
     // recv yield requests:
-    let sink_yield = context.socket(zmq::REP)?;
-    sink_yield.bind("tcp://0:5562")?;
+    let notifier_yield = context.socket(zmq::REP)?;
+    notifier_yield.bind("tcp://0:5562")?;
 
-    // publish notif to single id sink:
-    let sink_notif = context.socket(zmq::PUB)?;
-    sink_notif.bind("tcp://0:5563")?;
+    // publish notif to single id notifier:
+    let outgoing_notif = context.socket(zmq::PUB)?;
+    outgoing_notif.bind("tcp://0:5563")?;
 
 
     loop {
         let mut items = [
             incoming_notif.as_poll_item(zmq::POLLIN),
-            sink_yield.as_poll_item(zmq::POLLIN),
+            notifier_yield.as_poll_item(zmq::POLLIN),
         ];
         zmq::poll(&mut items, -1)?;
 
@@ -92,17 +95,17 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
                 Err(_) => continue
             };
 
-            sink_notif.send(&sink_client_id[..], zmq::SNDMORE)?;
-            sink_notif.send(&message[..], 0)?;
+            outgoing_notif.send(&notifier_id, zmq::SNDMORE)?;
+            outgoing_notif.send(&message[..], 0)?;
         }
 
         if items[1].is_readable() {
-            match sink_yield.recv_string(0)? {
+            match notifier_yield.recv_string(0)? {
                 Ok(id) =>  {
-                    println!("setting sink notif subscribe to: {}", id);
+                    println!("setting notifier notif subscribe to: {}", id);
                     // sink_client_id = id.as_bytes().clone();
-                    sink_client_id = id.clone();
-                    sink_yield.send("ok man", 0)?;
+                    notifier_id = id.clone();
+                    notifier_yield.send("ok man", 0)?;
                 },
                 Err(_) => continue
             };
@@ -110,8 +113,8 @@ pub fn run_aggregator() -> Result<(), failure::Error> {
     }
 }
 
-pub fn run_sink(config: Config) -> Result<(), failure::Error> {
-    println!("sink with id: {}", config.id);
+pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
+    println!("notifier with id: {}", config.id);
 
     let context = zmq::Context::new();
 
@@ -124,7 +127,7 @@ pub fn run_sink(config: Config) -> Result<(), failure::Error> {
     println!("got answer: {}", a_ok.unwrap());
 
 
-    // publish notif to single id sink:
+    // publish notif to single id notifier:
     let incoming_notif = context.socket(zmq::SUB)?;
     incoming_notif.connect("tcp://0:5563")?;
     incoming_notif.set_subscribe(config.id.as_bytes())?;
@@ -141,8 +144,8 @@ pub fn run_sink(config: Config) -> Result<(), failure::Error> {
 
 pub fn run(config: Config) -> Result<(), failure::Error> {
     match config.role {
-        Role::Sender     => run_sender(),
-        Role::Aggregator => run_aggregator(),
-        Role::Sink       => run_sink(config),
+        Role::Sender   => run_sender(),
+        Role::Server   => run_server(),
+        Role::Notifier => run_notifier(config),
     }
 }
