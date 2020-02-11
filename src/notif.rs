@@ -3,17 +3,17 @@ pub struct Notification {
     pub hostname: String,
     pub title:    String,
     pub body:     String,
-    pub priority: String, // might end up u32
+    pub priority: String, // u8, has 3 values.
 }
 
-impl Notification { // rewrite all of this
+impl Notification {
     pub fn from_argv(mut args: std::env::Args) -> Result<Notification, failure::Error> {
-        // lol, this can't be canonical rust.
-        if let (Some(priority), Some(title), Some(body), Ok(h)) = (args.next(), args.next(), args.next(), hostname::get()) {
-            if let Ok(hostname) = h.into_string() {
-                return Ok(Notification { priority, title, body, hostname });
-            }
-        }
-        return Err(failure::err_msg("expecting --send priority title body"));
+
+        let priority = args.next().expect("missing priority");
+        let title    = args.next().expect("missing title");
+        let body     = args.next().expect("missing body");
+        let hostname = hostname::get().unwrap().into_string().unwrap();
+
+        Ok(Notification { priority, title, body, hostname })
     }
 }
