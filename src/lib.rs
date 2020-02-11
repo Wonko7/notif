@@ -1,61 +1,39 @@
 use std::thread;
 use std::time::Duration;
 
-#[derive(PartialEq)]
-pub enum Role {
-    Sender,      // this is used to create a notification and send it to the server.
-    Server,      // receives notifs from multiple Senders forwards them to ONE unique Notifier
-    Notifier,
-}
-pub struct Config {
-    pub role: Role,
-    pub id: String,
-}
+mod notif;
+mod config;
+use notif::Notification;
+use config::{ Config, Role };
 
-
-impl Config {
-    pub fn new(mut args: std::env::Args) -> Result<Config, failure::Error> {
-        args.next();
-
-        let role = match args.next() {
-            None           => return Err(failure::err_msg("Didn't get a role as arg1")),
-            Some(argument) => match argument.as_str() {
-                "--sender"   => Role::Sender,
-                "--server"   => Role::Server,
-                "--notifier" => Role::Notifier, // WIP not sure about names.
-                _            => return Err(failure::format_err!("could not understand role {}", argument))
-            }
-        };
-
-        let id = match (&role, args.next()) {
-                (Role::Notifier, None)           => return Err(failure::err_msg("expecting notifier ID string.")),
-                (Role::Notifier, Some(argument)) => argument,
-                _                                => String::from("unused"),
-        };
-
-        Ok(Config { role, id })
-    }
-}
 
 pub fn run_sender() -> Result<(), failure::Error> {
     // for testing only.
     // this will just send argv to the server & exit.
-
     println!("Sender");
     let context = zmq::Context::new();
+
+    let notif = Notification::from_argv(std::env::args())?;
+    println!("got: {:?}", notif);
+
 
     //socket to talk to clients
     let publisher = context.socket(zmq::PUB)?;
     publisher.set_sndhwm(1_100_000).expect("failed setting hwm");
     publisher.connect("tcp://0:5561")?;
+    thread::sleep(Duration::from_millis(500));
 
-    //now broadcast 1M updates followed by end
-    println!("Broadcasting messages");
-    for i in 0..1_000_000 {
-        println!("{}", i);
-        publisher.send("Rhubarb", 0).expect("failed broadcasting");
-        thread::sleep(Duration::from_millis(500));
-    }
+    let msg: [&[u8]; 4] = [
+        &notif.hostname.as_str().as_bytes(),
+        &notif.priority.as_str().as_bytes(),
+        &notif.title.as_str().as_bytes(),
+        &notif.body.as_str().as_bytes(),
+    ];
+
+    publisher.send_multipart(&msg, 0)?;
+
+    thread::sleep(Duration::from_millis(500));
+
     Ok(())
 }
 
@@ -64,7 +42,7 @@ pub fn run_server() -> Result<(), failure::Error> {
 
     let context = zmq::Context::new();
     //let mut notifier_id = "".as_bytes();
-    let mut notifier_id = String::from("");
+    let mut notifier_id = String::from("kekette"); // default for now...
 
     // recv notifs on subscriber
     let incoming_notif = context.socket(zmq::SUB)?;
@@ -87,18 +65,33 @@ pub fn run_server() -> Result<(), failure::Error> {
         ];
         zmq::poll(&mut items, -1)?;
 
-        // example ref uses this: if items[0].is_readable() && receiver.recv(&mut msg, 0).is_ok() {
         if items[0].is_readable() {
-            if let Ok(message) = incoming_notif.recv_string(0)? {
-                // forward notif to currently elected notifier:
-                outgoing_notif.send(&notifier_id, zmq::SNDMORE)?;
-                outgoing_notif.send(&message[..], 0)?;
-            };
+            // forward notif to currently elected notifier:
+            let messages = incoming_notif.recv_multipart(0)?;
+
+            println!("got {} msg!", messages.len());
+            if messages.len() != 4 {
+                println!("Dropping message with {} parts", messages.len());
+                continue;
+            }
+
+            let msg: [&[u8]; 5] = [
+                &notifier_id.as_str().as_bytes(), // PUB id env
+                &messages[0],
+                &messages[1],
+                &messages[2],
+                &messages[3],
+            ];
+            println!("made {} msg!", msg.len());
+
+            outgoing_notif.send_multipart(&msg, 0)?;
         }
 
         if items[1].is_readable() {
             if let Ok(id) = notifier_yield.recv_string(0)? {
                 println!("setting notifier subscribe to: {}", id);
+                // server will make a unique ID per client. better yet, use zmq for that.
+                // => dealer/router has what we want.
                 // yield to the new notifier:
                 notifier_id = id.clone();
                 notifier_yield.send("ok man", 0)?;
@@ -115,7 +108,7 @@ pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
     // register and ask for others to yield:
     let gimme = context.socket(zmq::REQ)?;
     gimme.connect("tcp://0:5562")?;
-    gimme.send(&config.id[..], 0)?;
+    gimme.send(config.id.as_str(), 0)?;
 
     let a_ok = gimme.recv_string(0)?;
     println!("got answer: {}", a_ok.unwrap());
@@ -128,15 +121,24 @@ pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
 
     // loop around incoming_notif.
     loop {
-        if let Ok(message) = incoming_notif.recv_string(0)? {
-            println!("ENDGAYME {}", message);
-            // linux: execve notify-send.
-            // mac: ??
-        };
-    }
+        let mut messages = incoming_notif.recv_multipart(0)?; // FIXME assert length.
+
+        let fugly_conv   = |i| String::from_utf8(messages.iter().nth(i).unwrap().clone()).unwrap();
+        let env          = fugly_conv(0);
+        let priority     = fugly_conv(1);
+        let title        = fugly_conv(2);
+        let body         = fugly_conv(3);
+        let hostname     = fugly_conv(4);
+
+        let notif        = Notification { priority, title, body, hostname };
+
+        println!("ENDGAYME {:?}", notif);
+    };
 }
 
-pub fn run(config: Config) -> Result<(), failure::Error> {
+pub fn run() -> Result<(), failure::Error> {
+    let config = Config::new(std::env::args())?;
+
     match config.role {
         Role::Sender   => run_sender(),
         Role::Server   => run_server(),
