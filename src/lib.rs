@@ -1,11 +1,14 @@
 mod notif;
 mod config;
 use notif::Notification;
+use config::Config;
 
 pub fn run_sender(args: std::env::Args) -> Result<(), failure::Error> {
     // I don't understand why args doesn't need to be mut when we use it as mut in from_argv.
     let context = zmq::Context::new();
     let notif   = Notification::from_argv(args)?;
+    let c = Config::new();
+    println!("{:?}", c);
 
     println!("sending: {:?}", notif);
     let send_notif = context.socket(zmq::REQ)?;
