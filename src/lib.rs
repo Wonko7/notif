@@ -7,13 +7,13 @@ use notif::Notification;
 use config::{ Config, Role };
 
 
-pub fn run_sender() -> Result<(), failure::Error> {
+pub fn run_sender(args: std::env::Args) -> Result<(), failure::Error> {
     // for testing only.
     // this will just send argv to the server & exit.
     println!("Sender");
     let context = zmq::Context::new();
 
-    let notif = Notification::from_argv(std::env::args())?;
+    let notif = Notification::from_argv(args)?;
     println!("got: {:?}", notif);
 
 
@@ -68,13 +68,12 @@ pub fn run_server() -> Result<(), failure::Error> {
         if items[0].is_readable() {
             // forward notif to currently elected notifier:
             let messages = incoming_notif.recv_multipart(0)?;
-
-            println!("got {} msg!", messages.len());
             if messages.len() != 4 {
                 println!("Dropping message with {} parts", messages.len());
                 continue;
             }
 
+            // could also use messages.insert(notifier_id.clone(), 0), seemed uglier.
             let msg: [&[u8]; 5] = [
                 &notifier_id.as_str().as_bytes(), // PUB id env
                 &messages[0],
@@ -98,7 +97,7 @@ pub fn run_server() -> Result<(), failure::Error> {
             };
         }
     }
-    }
+}
 
 pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
     println!("notifier with id: {}", config.id);
@@ -121,26 +120,30 @@ pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
 
     // loop around incoming_notif.
     loop {
-        let mut messages = incoming_notif.recv_multipart(0)?; // FIXME assert length.
+        let messages = incoming_notif.recv_multipart(0)?;
+        if messages.len() != 5 {
+            println!("Dropping message with {} parts", messages.len());
+            continue;
+        }
 
-        let fugly_conv   = |i| String::from_utf8(messages.iter().nth(i).unwrap().clone()).unwrap();
-        let env          = fugly_conv(0);
-        let priority     = fugly_conv(1);
-        let title        = fugly_conv(2);
-        let body         = fugly_conv(3);
-        let hostname     = fugly_conv(4);
+        let conv             = |i: usize| String::from_utf8((messages[i]).clone()); // couldn't get around the clone.
+        let notif_hostname   = conv(4)?;
+        println!("from: {}", notif_hostname);
 
-        let notif        = Notification { priority, title, body, hostname };
-
-        println!("ENDGAYME {:?}", notif);
+        std::process::Command::new("/usr/bin/notify-send")
+            .arg("--")
+            .arg(conv(2)?)
+            .arg(conv(3)?)
+            .spawn()?;
     };
 }
 
 pub fn run() -> Result<(), failure::Error> {
-    let config = Config::new(std::env::args())?;
+    let mut args = std::env::args();
+    let config = Config::new(&mut args)?;
 
     match config.role {
-        Role::Sender   => run_sender(),
+        Role::Sender   => run_sender(args),
         Role::Server   => run_server(),
         Role::Notifier => run_notifier(config),
     }
