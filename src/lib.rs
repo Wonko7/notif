@@ -1,6 +1,3 @@
-use std::thread;
-use std::time::Duration;
-
 mod notif;
 mod config;
 use notif::Notification;
@@ -14,14 +11,12 @@ pub fn run_sender(args: std::env::Args) -> Result<(), failure::Error> {
     let context = zmq::Context::new();
 
     let notif = Notification::from_argv(args)?;
-    println!("got: {:?}", notif);
+    println!("sending: {:?}", notif);
 
 
     //socket to talk to clients
-    let publisher = context.socket(zmq::PUB)?;
-    publisher.set_sndhwm(1_100_000).expect("failed setting hwm");
-    publisher.connect("tcp://0:5561")?;
-    thread::sleep(Duration::from_millis(500));
+    let send_notif = context.socket(zmq::REQ)?;
+    send_notif.connect("tcp://0:5561")?;
 
     let msg: [&[u8]; 4] = [
         &notif.hostname.as_str().as_bytes(),
@@ -30,9 +25,9 @@ pub fn run_sender(args: std::env::Args) -> Result<(), failure::Error> {
         &notif.body.as_str().as_bytes(),
     ];
 
-    publisher.send_multipart(&msg, 0)?;
-
-    thread::sleep(Duration::from_millis(500));
+    send_notif.send_multipart(&msg, 0)?;
+    let ack = send_notif.recv_string(0)?;
+    println!("sent and got ack: {}", ack.unwrap()); // if ack isn't utf8 well panic.
 
     Ok(())
 }
@@ -45,9 +40,8 @@ pub fn run_server() -> Result<(), failure::Error> {
     let mut notifier_id = String::from("kekette"); // default for now...
 
     // recv notifs on subscriber
-    let incoming_notif = context.socket(zmq::SUB)?;
+    let incoming_notif = context.socket(zmq::REP)?;
     incoming_notif.bind("tcp://0:5561")?;
-    incoming_notif.set_subscribe(b"")?;
 
     // recv yield requests:
     let notifier_yield = context.socket(zmq::REP)?;
@@ -72,7 +66,6 @@ pub fn run_server() -> Result<(), failure::Error> {
                 println!("Dropping message with {} parts", messages.len());
                 continue;
             }
-
             // could also use messages.insert(notifier_id.clone(), 0), seemed uglier.
             let msg: [&[u8]; 5] = [
                 &notifier_id.as_str().as_bytes(), // PUB id env
@@ -81,9 +74,8 @@ pub fn run_server() -> Result<(), failure::Error> {
                 &messages[2],
                 &messages[3],
             ];
-            println!("made {} msg!", msg.len());
-
             outgoing_notif.send_multipart(&msg, 0)?;
+            incoming_notif.send("ack", 0)?;
         }
 
         if items[1].is_readable() {
@@ -128,11 +120,17 @@ pub fn run_notifier(config: Config) -> Result<(), failure::Error> {
 
         let conv             = |i: usize| String::from_utf8((messages[i]).clone()); // couldn't get around the clone.
         let notif_hostname   = conv(4)?;
+        let hostname         = hostname::get().unwrap();
         println!("from: {}", notif_hostname);
 
+        let title = if notif_hostname.as_str() != hostname.to_str().unwrap() {
+            notif_hostname + ": " + conv(2)?.as_str()
+        } else {
+            conv(2)?
+        };
         std::process::Command::new("/usr/bin/notify-send")
             .arg("--")
-            .arg(conv(2)?)
+            .arg(title)
             .arg(conv(3)?)
             .spawn()?;
     };
