@@ -19,21 +19,19 @@ pub struct Config {
 impl Config {
     pub fn new() -> Result<Config, failure::Error> {
 
-        if let Ok(a) = std::fs::read_to_string("a.txt") {
-            //let cfg: Config = toml::from_str(a.as_str()).unwrap();
-            //return Ok(cfg);
+        if let Ok(a) = std::fs::read_to_string("~/.notifier") {
             return Ok(toml::from_str(a.as_str()).unwrap());
         };
 
-        // if let Ok(a) = std::fs::read_to_string("b.txt") {
-        //     return Ok(Config {a});
-        // }
+        if let Ok(a) = std::fs::read_to_string("/etc/notifier") {
+            return Ok(toml::from_str(a.as_str()).unwrap());
+        };
 
         Ok(Config {
             server_ip:           String::from("0"),
-            incoming_notif_port: String::from("9111"),
-            yield_port:          String::from("9112"),
-            outgoing_notif_port: String::from("9112"),
+            incoming_notif_port: String::from("9691"),
+            yield_port:          String::from("9692"),
+            outgoing_notif_port: String::from("9693"),
         })
     }
 }

@@ -3,7 +3,7 @@ mod config;
 use notif::Notification;
 use config::Config;
 
-pub fn run_sender(args: std::env::Args) -> Result<(), failure::Error> {
+pub fn run_sender(config: Config, args: std::env::Args) -> Result<(), failure::Error> {
     // I don't understand why args doesn't need to be mut when we use it as mut in from_argv.
     let context = zmq::Context::new();
     let notif   = Notification::from_argv(args)?;
@@ -12,7 +12,7 @@ pub fn run_sender(args: std::env::Args) -> Result<(), failure::Error> {
 
     println!("sending: {:?}", notif);
     let send_notif = context.socket(zmq::REQ)?;
-    send_notif.connect("tcp://0:5561")?;
+    send_notif.connect(format!("tcp://{}:{}", config.server_ip, config.incoming_notif_port).as_str())?;
 
     let msg: [&[u8]; 4] = [
         &notif.hostname.as_str().as_bytes(),
@@ -28,7 +28,7 @@ pub fn run_sender(args: std::env::Args) -> Result<(), failure::Error> {
     Ok(())
 }
 
-pub fn run_server() -> Result<(), failure::Error> {
+pub fn run_server(config: Config) -> Result<(), failure::Error> {
     println!("Server");
 
     let context = zmq::Context::new();
@@ -37,15 +37,15 @@ pub fn run_server() -> Result<(), failure::Error> {
 
     // recv notifs on subscriber
     let incoming_notif = context.socket(zmq::REP)?;
-    incoming_notif.bind("tcp://0:5561")?;
+    incoming_notif.bind(format!("tcp://{}:{}", config.server_ip, config.incoming_notif_port).as_str())?;
 
     // recv yield requests:
     let notifier_yield = context.socket(zmq::REP)?;
-    notifier_yield.bind("tcp://0:5562")?;
+    notifier_yield.bind(format!("tcp://{}:{}", config.server_ip, config.yield_port).as_str())?;
 
     // publish notif to single id notifier:
     let outgoing_notif = context.socket(zmq::PUB)?;
-    outgoing_notif.bind("tcp://0:5563")?;
+    outgoing_notif.bind(format!("tcp://{}:{}", config.server_ip, config.outgoing_notif_port).as_str())?;
 
     loop {
         let mut items = [
@@ -86,14 +86,14 @@ pub fn run_server() -> Result<(), failure::Error> {
     }
 }
 
-pub fn run_notifier(mut args: std::env::Args) -> Result<(), failure::Error> {
+pub fn run_notifier(config: Config, mut args: std::env::Args) -> Result<(), failure::Error> {
     let id = args.next().expect("--notifier <ID>: missing ID.");
 
     println!("notifier with id: {}", id);
 
     let context = zmq::Context::new();
     let gimme = context.socket(zmq::REQ)?; // signal USR1 to takeover again
-    gimme.connect("tcp://0:5562")?;
+    gimme.connect(format!("tcp://{}:{}", config.server_ip, config.yield_port).as_str())?;
     gimme.send(id.as_str(), 0)?;
 
     let a_ok = gimme.recv_string(0)?;
@@ -102,7 +102,7 @@ pub fn run_notifier(mut args: std::env::Args) -> Result<(), failure::Error> {
 
     // publish notif to single id notifier:
     let incoming_notif = context.socket(zmq::SUB)?;
-    incoming_notif.connect("tcp://0:5563")?;
+    incoming_notif.connect(format!("tcp://{}:{}", config.server_ip, config.outgoing_notif_port).as_str())?;
     incoming_notif.set_subscribe(id.as_bytes())?;
 
     // loop around incoming_notif.
@@ -133,14 +133,17 @@ pub fn run_notifier(mut args: std::env::Args) -> Result<(), failure::Error> {
 
 pub fn run() -> Result<(), failure::Error> {
     let mut args = std::env::args();
+    let config = Config::new()?;
+    println!("{:?}", config);
+
     args.next();
 
     match args.next() {
         None           => return Err(failure::err_msg("Didn't get a role as arg1")),
         Some(argument) => match argument.as_str() {
-            "--send"     => run_sender(args),
-            "--notifier" => run_notifier(args),
-            "--server"   => run_server(),
+            "--send"     => run_sender(config, args),
+            "--notifier" => run_notifier(config, args),
+            "--server"   => run_server(config),
             _            => Err(failure::format_err!("could not understand role {}", argument))
         }
     }
