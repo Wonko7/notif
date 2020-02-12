@@ -19,12 +19,12 @@ pub struct Config {
 impl Config {
     pub fn new() -> Result<Config, failure::Error> {
         let mut home_config = dirs::home_dir().unwrap(); // .push(".notifier"); <- this does not work?
-        home_config.push(".notifier");
+        home_config.push(".notif");
         if let Ok(a) = std::fs::read_to_string(home_config) {
             return Ok(toml::from_str(a.as_str()).unwrap());
         };
 
-        if let Ok(a) = std::fs::read_to_string("/etc/notifier") {
+        if let Ok(a) = std::fs::read_to_string("/etc/notif") {
             return Ok(toml::from_str(a.as_str()).unwrap());
         };
 

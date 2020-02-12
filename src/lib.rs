@@ -102,7 +102,7 @@ pub fn run_notifier(config: Config, mut args: std::env::Args) -> Result<(), fail
         let notif_hostname = notif_get(1)?;
         let body           = notif_get(4)?;
         let title          = if notif_hostname != hostname {
-            notif_hostname + ": " + notif_get(3)?.as_str()
+            format!("@{}: {}", notif_hostname, notif_get(3)?)
         } else {
             notif_get(3)?
         };
