@@ -1,7 +1,11 @@
+extern crate signal_hook;
+use signal_hook::{iterator::Signals, SIGHUP};
+
 mod notif;
 mod config;
 use notif::Notification;
 use config::Config;
+
 
 pub fn run_sender(config: Config, args: std::env::Args) -> Result<(), failure::Error> {
     // I don't understand why args^ doesn't need to be mut when we use it as mut in from_argv.
@@ -91,29 +95,41 @@ pub fn run_notifier(config: Config, mut args: std::env::Args) -> Result<(), fail
     incoming_notif.set_subscribe(id.as_bytes())?;
     seize_notifier.recv_string(0)?.unwrap(); // wait for ack.
 
-    loop {
-        let notif = incoming_notif.recv_multipart(0)?;
-        if notif.len() != 5 {
-            println!("Dropping message with {} parts", notif.len());
-            continue;
+    // catch SIGHUP to seize notifier! (use on unlock xscreensaver, etc)
+    let signals        = Signals::new(&[SIGHUP])?;
+    std::thread::spawn(move || {
+        for _signal in signals.forever() {
+            seize_notifier.send(id.as_str(), 0).expect("could not send seize_notifier");
+            seize_notifier.recv_string(0).expect("could not recv seize_notifier").unwrap();
+            println!("Seized notifier as {}", id.as_str());
         }
+    });
 
-        let notif_get      = |i: usize| String::from_utf8(notif[i].clone()); // couldn't get around the clone.
-        let notif_hostname = notif_get(1)?;
-        let body           = notif_get(4)?;
-        let title          = if notif_hostname != hostname {
-            format!("@{}: {}", notif_hostname, notif_get(3)?)
-        } else {
-            notif_get(3)?
-        };
-        // println!("env 0{}, host 1{}, prio 2{}, title 3{}, body 4{}", notif_get(0)?, notif_get(1)?, notif_get(2)?, notif_get(3)?, notif_get(4)?);
+    loop {
+        if let Ok(notif) = incoming_notif.recv_multipart(0) { // ignore Err, interrupts for example.
+            if notif.len() != 5 {
+                println!("Dropping message with {} parts", notif.len());
+                continue;
+            }
 
-        std::process::Command::new("/usr/bin/notify-send")
-            .arg("--")
-            .arg(title)
-            .arg(body)
-            .spawn()?;
-    };
+            let notif_get      = |i: usize| String::from_utf8(notif[i].clone()); // couldn't get around the clone.
+            let notif_hostname = notif_get(1)?;
+            let body           = notif_get(4)?;
+            let title          = if notif_hostname != hostname {
+                format!("@{}: {}", notif_hostname, notif_get(3)?)
+            } else {
+                notif_get(3)?
+            };
+            // println!("env 0{}, host 1{}, prio 2{}, title 3{}, body 4{}", notif_get(0)?, notif_get(1)?, notif_get(2)?, notif_get(3)?, notif_get(4)?);
+
+            std::process::Command::new("/usr/bin/notify-send")
+                .arg("--")
+                .arg(title)
+                .arg(body)
+                .spawn()?
+                .wait()?;
+        }
+    }
 }
 
 pub fn run() -> Result<(), failure::Error> {
@@ -128,7 +144,7 @@ pub fn run() -> Result<(), failure::Error> {
             "--send"     => run_sender(config, args),
             "--notifier" => run_notifier(config, args),
             "--server"   => run_server(config),
-            _            => Err(failure::format_err!("could not understand role {}", argument))
+            _            => Err(failure::format_err!("could not understand role {}", argument)),
         },
         None           => Err(failure::err_msg("Didn't get a role as arg1")),
     }
