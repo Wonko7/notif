@@ -136,8 +136,6 @@ pub fn run() -> Result<(), failure::Error> {
     let mut args = std::env::args();
     let config   = Config::new()?;
 
-    println!("running with: {:?}", config);
-
     args.next();
     match args.next() {
         Some(argument) => match argument.as_str() {
