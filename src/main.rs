@@ -16,7 +16,7 @@ fn main() -> Result<(), failure::Error> {
     let hostname = hostname::get().unwrap().into_string().unwrap();
 
     let matches = App::new("notif")
-        .version("0.0.3") // hmm.
+        .version("0.0.4") // hmm.
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .author("william@undefined.re")
         .about("routes remote notifications to you")
