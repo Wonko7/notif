@@ -139,12 +139,12 @@ pub fn run() -> Result<(), failure::Error> {
     let verbose  = false;
     let hostname = hostname::get().unwrap().into_string().unwrap();
 
-    let matches = App::new("myapp")
+    let matches = App::new("notif")
         .version("0.0.3") // hmm.
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .author("william@undefined.re")
         .about("routes remote notifications to you")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .arg(Arg::with_name("config")
+        .arg(Arg::with_name("config") // TODO: does not work, but should be fine: https://github.com/clap-rs/clap/issues/1570
             .short('c')
             .long("config")
             .value_name("FILE")
@@ -175,6 +175,7 @@ pub fn run() -> Result<(), failure::Error> {
             .about("receive and forward notifications"))
         .get_matches();
 
+    // TODO add --verbose args work again.
     let config_file = matches.value_of("config");
     let config = Config::new(config_file)?;
 
