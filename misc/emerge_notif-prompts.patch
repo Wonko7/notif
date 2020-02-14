@@ -1,0 +1,30 @@
+Use this as /etc/portage/patches/sys-apps/portage/notif.patch
+Sends "Would you like to ..." prompts through notif.
+Use with --alert option (EMERGE_DEFAULT_OPTS for example).
+
+---
+ lib/_emerge/UserQuery.py | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/lib/_emerge/UserQuery.py b/lib/_emerge/UserQuery.py
+index e20bbc6c3..0dbb3e8e7 100644
+--- a/lib/_emerge/UserQuery.py
++++ b/lib/_emerge/UserQuery.py
+@@ -8,6 +8,7 @@ import sys
+
+ from portage import _unicode_decode
+ from portage.output import bold, create_color_func
++from subprocess import call
+
+
+ class UserQuery(object):
+@@ -50,6 +51,7 @@ class UserQuery(object):
+ 		colours=(colours*len(responses))[:len(responses)]
+ 		responses = [_unicode_decode(x) for x in responses]
+ 		if "--alert" in self.myopts:
++			call(["/usr/bin/notif", "--send", "normal", "emerge", prompt])
+ 			prompt = '\a' + prompt
+ 		print(bold(prompt), end=' ')
+ 		try:
+--
+2.21.0
