@@ -8,7 +8,6 @@ use config::Config;
 
 
 pub fn run_sender(config: Config, hostname: &str, summary: &str, body: &str, priority: &str) -> Result<(), failure::Error> {
-    // I don't understand why args^ doesn't need to be mut when we use it as mut in from_argv.
     let context    = zmq::Context::new();
     let send_notif = context.socket(zmq::REQ)?;
     send_notif.connect(format!("tcp://{}:{}", config.server_ip, config.incoming_notif_port).as_str())?;
@@ -22,7 +21,7 @@ pub fn run_sender(config: Config, hostname: &str, summary: &str, body: &str, pri
 
     send_notif.send_multipart(&msg, 0)?;
     send_notif.recv_string(0)?.unwrap(); // wait for ack.
-    // TODO: see if --debug or something:
+    // TODO: add --verbose for this;
     // let ack = send_notif.recv_string(0)?;
     // println!("sent and got ack: {}", ack.unwrap()); // if ack isn't utf8 well panic.
 
@@ -83,7 +82,7 @@ pub fn run_server(config: Config) -> Result<(), failure::Error> {
 
 pub fn run_notifier(config: Config, hostname: &str, id: String) -> Result<(), failure::Error> {
     let context        = zmq::Context::new();
-    let seize_notifier = context.socket(zmq::REQ)?; // TODO: signal USR1 to takeover again
+    let seize_notifier = context.socket(zmq::REQ)?;
     let incoming_notif = context.socket(zmq::SUB)?;
 
     seize_notifier.connect(format!("tcp://{}:{}", config.server_ip, config.notifier_seize_port).as_str())?;
@@ -109,7 +108,7 @@ pub fn run_notifier(config: Config, hostname: &str, id: String) -> Result<(), fa
                 continue;
             }
 
-            let notif_get      = |i: usize| String::from_utf8(notif[i].clone()); // couldn't get around the clone.
+            let notif_get      = |i: usize| String::from_utf8(notif[i].clone()); // FIXME: couldn't get around the clone.
             let notif_hostname = notif_get(1)?;
             let priority       = notif_get(2)?;
             let body           = notif_get(4)?;
@@ -118,7 +117,6 @@ pub fn run_notifier(config: Config, hostname: &str, id: String) -> Result<(), fa
             } else {
                 notif_get(3)?
             };
-            // println!("env 0{}, host 1{}, prio 2{}, title 3{}, body 4{}", notif_get(0)?, notif_get(1)?, notif_get(2)?, notif_get(3)?, notif_get(4)?);
 
             std::process::Command::new("/usr/bin/notify-send")
                 .arg("-u")
