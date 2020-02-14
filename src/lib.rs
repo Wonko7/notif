@@ -12,7 +12,6 @@ pub fn run_sender(config: Config, hostname: &str, summary: &str, body: &str, pri
     let context    = zmq::Context::new();
     let send_notif = context.socket(zmq::REQ)?;
     send_notif.connect(format!("tcp://{}:{}", config.server_ip, config.incoming_notif_port).as_str())?;
-//    let notif      = Notification::from_argv(args)?;
 
     let msg: [&[u8]; 4] = [
         hostname.as_bytes(),
@@ -112,6 +111,7 @@ pub fn run_notifier(config: Config, hostname: &str, id: String) -> Result<(), fa
 
             let notif_get      = |i: usize| String::from_utf8(notif[i].clone()); // couldn't get around the clone.
             let notif_hostname = notif_get(1)?;
+            let priority       = notif_get(2)?;
             let body           = notif_get(4)?;
             let title          = if notif_hostname != hostname {
                 format!("@{}: {}", notif_hostname, notif_get(3)?)
@@ -121,6 +121,8 @@ pub fn run_notifier(config: Config, hostname: &str, id: String) -> Result<(), fa
             // println!("env 0{}, host 1{}, prio 2{}, title 3{}, body 4{}", notif_get(0)?, notif_get(1)?, notif_get(2)?, notif_get(3)?, notif_get(4)?);
 
             std::process::Command::new("/usr/bin/notify-send")
+                .arg("-u")
+                .arg(priority)
                 .arg("--")
                 .arg(title)
                 .arg(body)
@@ -163,7 +165,7 @@ pub fn run() -> Result<(), failure::Error> {
             .arg(Arg::with_name("urgency")
                 .short('u')
                 .default_value("normal")
-                .possible_values(&["low", "normal", "urgent"])
+                .possible_values(&["low", "normal", "critical"])
                 .help("urgency")))
         .subcommand(App::new("notify")
             .about("show notifications")
