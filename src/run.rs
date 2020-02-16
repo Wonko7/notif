@@ -106,22 +106,21 @@ pub fn notify(config: Config, hostname: &str, id: String) -> Result<(), failure:
                 continue;
             }
 
-            let notif_get      = |i: usize| String::from_utf8(notif[i].clone()); // FIXME: couldn't get around the clone.
+            // put this in a fn and ignore Err, we shouldn't return and exit because of bad utf8.
+            let keep_in_scope: String;
+            let notif_get      = |i: usize| std::str::from_utf8(&notif[i]);
             let notif_hostname = notif_get(1)?;
             let priority       = notif_get(2)?;
             let body           = notif_get(4)?;
             let title          = if notif_hostname != hostname {
-                format!("@{}: {}", notif_hostname, notif_get(3)?)
+                keep_in_scope = format!("@{}: {}", notif_hostname, notif_get(3)?);
+                keep_in_scope.as_str()
             } else {
                 notif_get(3)?
             };
 
             std::process::Command::new("/usr/bin/notify-send")
-                .arg("-u")
-                .arg(priority)
-                .arg("--")
-                .arg(title)
-                .arg(body)
+                .args(&["-u", priority, "--", title, body])
                 .spawn()?
                 .wait()?;
         }
