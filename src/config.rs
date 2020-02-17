@@ -11,35 +11,32 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub server_ip:           String,
-    pub incoming_notif_port: u16,
-    pub notifier_seize_port: u16,
-    pub outgoing_notif_port: u16,
+    pub auth:     libzmq::config::AuthConfig,
+    pub client:   libzmq::config::ClientConfig,
+    pub server:   libzmq::config::ServerConfig,
+    // pub sender:   libzmq::config::ClientConfig,
 }
 
 impl Config {
     pub fn new(file: std::option::Option<&str>) -> Result<Config, failure::Error> {
 
-        if let Some(file) = file {
-            let content = std::fs::read_to_string(file).expect(format!("config file {} does not exist", file).as_str());
-            return Ok(toml::from_str(content.as_str()).unwrap());
-        }
-
-        let mut home_config = dirs::home_dir().unwrap(); // .push(".notifier"); <- this does not work?
-        home_config.push(".notif");
-        if let Ok(content) = std::fs::read_to_string(home_config) {
-            return Ok(toml::from_str(content.as_str()).unwrap());
+        if let Ok(content) = std::fs::read_to_string("./test.yaml") {
+            return Ok(serde_yaml::from_str(content.as_str()).unwrap());
         };
+        return Err(failure::err_msg("no file"))
+        // if let Some(file) = file {
+        //     let content = std::fs::read_to_string(file).expect(format!("config file {} does not exist", file).as_str());
+        //     return Ok(toml::from_str(content.as_str()).unwrap());
+        // }
 
-        if let Ok(content) = std::fs::read_to_string("/etc/notif") {
-            return Ok(toml::from_str(content.as_str()).unwrap());
-        };
+        // let mut home_config = dirs::home_dir().unwrap(); // .push(".notifier"); <- this does not work?
+        // home_config.push(".notif");
+        // if let Ok(content) = std::fs::read_to_string(home_config) {
+        //     return Ok(toml::from_str(content.as_str()).unwrap());
+        // };
 
-        Ok(Config {
-            server_ip:           String::from("0"),
-            incoming_notif_port: 9691,
-            notifier_seize_port: 9692,
-            outgoing_notif_port: 9693,
-        })
+        // if let Ok(content) = std::fs::read_to_string("/etc/notif") {
+        //     return Ok(toml::from_str(content.as_str()).unwrap());
+        // };
     }
 }

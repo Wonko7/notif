@@ -56,21 +56,22 @@ fn main() -> Result<(), failure::Error> {
     // TODO add --verbose args work again.
     let config_file = matches.value_of("config");
     let config = Config::new(config_file)?;
+    println!("{:?}", config);
 
     match matches.subcommand() {
-        ("send", Some(ms))   => run::send(
-            config,
-            hostname.as_str(),
-            get_v(ms, "SUMMARY"),
-            get_v(ms, "BODY"),
-            get_v(ms, "urgency"),
-        ),
+        // "send", Some(ms))   => run::send(
+        //    config,
+        //    hostname.as_str(),
+        //    get_v(ms, "SUMMARY"),
+        //    get_v(ms, "BODY"),
+        //    get_v(ms, "urgency"),
+        //),
         ("notify", Some(ms)) => run::notify(
             config,
             hostname.as_str(),
             get_v(ms, "ID").to_string() // because the thread takes ownership.
         ),
-        ("route", _)         => run::serve(config),
+        ("route", _)         => run::route(config),
         _                    => Err(failure::err_msg("unreachable"))
     }
 }
