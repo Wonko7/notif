@@ -69,7 +69,7 @@ fn main() -> Result<(), failure::Error> {
             config,
             hostname.as_str(),
             get_v(ms, "ID").to_string() // because the thread takes ownership.
-            ),
+        ),
         ("route", _)         => run::serve(config),
         _                    => Err(failure::err_msg("unreachable"))
     }
