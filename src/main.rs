@@ -56,7 +56,6 @@ fn main() -> Result<(), failure::Error> {
     // TODO add --verbose args work again.
     let config_file = matches.value_of("config");
     let config = Config::new(config_file)?;
-    println!("{:?}", config);
 
     match matches.subcommand() {
         // "send", Some(ms))   => run::send(

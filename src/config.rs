@@ -20,7 +20,7 @@ pub struct Config {
 impl Config {
     pub fn new(file: std::option::Option<&str>) -> Result<Config, failure::Error> {
 
-        if let Ok(content) = std::fs::read_to_string("./test.yaml") {
+        if let Ok(content) = std::fs::read_to_string("./misc/test.yaml") {
             return Ok(serde_yaml::from_str(content.as_str()).unwrap());
         };
         return Err(failure::err_msg("no file"))

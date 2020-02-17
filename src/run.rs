@@ -31,16 +31,18 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
     println!("route");
 
     let _ = config.auth.build()?;
-    let server = config.server.build()?; // bind.
-    println!("{:?}", server);
+    let outgoing_notif = config.server.build()?; // bind.
+    let mut id;
 
     loop {
-        let request = server.recv_msg()?; // we need prelude::*, why?
+        println!("waiting");
+        let request = outgoing_notif.recv_msg()?; // we need prelude::*, why?
+        println!("got something");
 
         // Retrieve the routing_id to route the reply to the client.
-        let id = request.routing_id().unwrap();
-        println!("got {:?}: {}", id, request.to_str()?);
-        server.route("pong", id)?;
+        id = request.routing_id().unwrap();
+        println!("{:?} seized with message: {}", id, request.to_str()?);
+        outgoing_notif.route("pong", id)?;
     }
 
     //Ok(())
@@ -97,7 +99,29 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
 
 pub fn notify(config: Config, hostname: &str, id: String) -> Result<(), failure::Error> {
     println!("notify");
-    Ok(())
+
+    let _ = config.auth.build()?;
+    let notif_router = config.client.build()?; // connect.
+
+    notif_router.send("seize!")?;
+    println!("sent seize");
+
+    loop {
+        println!("waiting");
+        let request = notif_router.recv_msg()?; // we need prelude::*, why?
+        println!("got {} {}", id, request.to_str()?);
+    }
+
+    // loop {
+    //     let request = server.recv_msg()?; // we need prelude::*, why?
+
+    //     // Retrieve the routing_id to route the reply to the client.
+    //     let id = request.routing_id().unwrap();
+    //     println!("got {:?}: {}", id, request.to_str()?);
+    //     server.route("pong", id)?;
+    // }
+    // println!("notify");
+    // Ok(())
     // let context        = zmq::Context::new();
     // let seize_notifier = context.socket(zmq::REQ)?;
     // let incoming_notif = context.socket(zmq::SUB)?;
