@@ -1,5 +1,5 @@
 extern crate clap;
-use clap::{Arg, AppSettings, App};
+use clap::{Arg, AppSettings, App, crate_version};
 
 mod config;
 use config::Config;
@@ -16,7 +16,7 @@ fn main() -> Result<(), failure::Error> {
     let hostname = hostname::get().unwrap().into_string().unwrap();
 
     let matches = App::new("notif")
-        .version("0.0.4") // hmm.
+        .version(crate_version!())
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .author("william@undefined.re")
         .about("routes remote notifications to you")
