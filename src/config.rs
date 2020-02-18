@@ -11,9 +11,11 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub auth:     libzmq::config::AuthConfig,
-    pub client:   libzmq::config::ClientConfig,
-    pub server:   libzmq::config::ServerConfig,
+    pub auth:       libzmq::config::AuthConfig,
+    pub sender:     libzmq::config::ClientConfig,
+    pub notifier:   libzmq::config::ClientConfig,
+    pub router_in:  libzmq::config::ServerConfig,
+    pub router_out: libzmq::config::ServerConfig,
     // pub sender:   libzmq::config::ClientConfig,
 }
 

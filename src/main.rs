@@ -3,6 +3,7 @@ use clap::{Arg, AppSettings, App, crate_version};
 
 mod config;
 use config::Config;
+mod notif;
 mod run;
 
 

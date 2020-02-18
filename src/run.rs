@@ -1,40 +1,38 @@
-use crate::config;
-use libzmq::{prelude::*, poll::*, *};
+use crate::config::Config;
+use crate::notif::Notification;
 
-extern crate signal_hook;
+use serde::{Serialize, Deserialize};
+use libzmq::{prelude::*, poll::*, *};
 use signal_hook::{iterator::Signals, SIGHUP};
 
-use config::Config;
 
-// pub fn send(config: Config, hostname: &str, summary: &str, body: &str, priority: &str) -> Result<(), failure::Error> {
-//     let context    = zmq::Context::new();
-//     let send_notif = context.socket(zmq::REQ)?;
-//     send_notif.connect(format!("tcp://{}:{}", config.server_ip, config.incoming_notif_port).as_str())?;
-//
-//     let msg: [&[u8]; 4] = [
-//         hostname.as_bytes(),
-//         priority.as_bytes(),
-//         summary.as_bytes(),
-//         body.as_bytes(),
-//     ];
-//
-//     send_notif.send_multipart(&msg, 0)?;
-//     send_notif.recv_string(0)?.unwrap(); // wait for ack.
-//     // TODO: add --verbose for this;
-//     // let ack = send_notif.recv_string(0)?;
-//     // println!("sent and got ack: {}", ack.unwrap()); // if ack isn't utf8 well panic.
-//
-//     Ok(())
-// }
+pub fn send(config: Config, hostname: &str, summary: &str, body: &str, priority: &str) -> Result<(), failure::Error> {
+    let _              = config.auth.build()?;
+    let send_notif = config.sender.build()?; // better config FIXME
+
+    let msg = Notification {
+        hostname,
+        priority,
+        summary,
+        body,
+    };
+
+    send_notif.send(bincode::serialize(msg))?;
+    send_notif.recv_msg()?; // wait for ack.
+    // TODO: add --verbose for this;
+    // let ack = send_notif.recv_string(0)?;
+    // println!("sent and got ack: {}", ack.unwrap()); // if ack isn't utf8 well panic.
+
+    Ok(())
+}
 
 pub fn route(config: Config) -> Result<(), failure::Error> {
     println!("route");
 
     let mut current_notifier_id = None;
-
     let _              = config.auth.build()?;
-    let outgoing_notif = config.server.build()?; // bind.
-    let incoming_notif = config.server.clone().build()?; // bind. CONFIG FIXME
+    let incoming_notif = config.router_in.build()?; // better config FIXME
+    let outgoing_notif = config.router_out.build()?;
     let mut poller     = Poller::new();
     let mut events     = Events::new();
 

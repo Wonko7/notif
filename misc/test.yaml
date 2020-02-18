@@ -6,7 +6,7 @@ auth:
     - "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
     - "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
 
-client:
+sender:
   connect:
     - tcp: "127.0.0.1:7777"
   heartbeat:
@@ -25,7 +25,7 @@ client:
       # This is the server's public key.
       server: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
 
-server:
+router_in:
   bind:
     - tcp: "127.0.0.1:7777"
   heartbeat:
@@ -36,13 +36,42 @@ server:
     curve_server:
       secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
 
+router_out:
+  bind:
+    - tcp: "127.0.0.1:7778"
+  heartbeat:
+      interval: 1s
+      timeout: 3s
+      ttl: 3s
+  mechanism:
+    curve_server:
+      secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
+
+notifier:
+  connect:
+    - tcp: "127.0.0.1:7778"
+  heartbeat:
+      interval: 1s
+      timeout: 3s
+      ttl: 3s
+  send_high_water_mark: 10
+  send_timeout: 300ms
+  recv_high_water_mark: 100
+  recv_timeout: 2100s #fuck me I'm not in love with this
+  mechanism:
+    curve_client:
+      client:
+        public: "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
+        secret: "9oz*DI*GJR.fF:YpDLp^J(Js0M#2GD?JYQJ/k{h^"
+      # This is the server's public key.
+      server: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
 
 # router:
 # public: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
 # secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
-# notifier:
+# sender:
 # public: "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
 # secret: "apFYLNS*8cNu}2Nc>tve6BSnM7cVzCI#-EB>D!{1"
-# sender:
+# notifier:
 # public: "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
 # secret: "9oz*DI*GJR.fF:YpDLp^J(Js0M#2GD?JYQJ/k{h^"
