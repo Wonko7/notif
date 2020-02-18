@@ -1,5 +1,5 @@
 use crate::config;
-use libzmq::{prelude::*, *};
+use libzmq::{prelude::*, poll::*, *};
 
 extern crate signal_hook;
 use signal_hook::{iterator::Signals, SIGHUP};
@@ -30,71 +30,44 @@ use config::Config;
 pub fn route(config: Config) -> Result<(), failure::Error> {
     println!("route");
 
-    let _ = config.auth.build()?;
+    let mut current_notifier_id = None;
+
+    let _              = config.auth.build()?;
     let outgoing_notif = config.server.build()?; // bind.
-    let mut id;
+    let incoming_notif = config.server.clone().build()?; // bind. CONFIG FIXME
+    let mut poller     = Poller::new();
+    let mut events     = Events::new();
+
+    poller.add(&outgoing_notif, PollId(0), READABLE)?;
+    poller.add(&incoming_notif, PollId(1), READABLE)?;
 
     loop {
         println!("waiting");
-        let request = outgoing_notif.recv_msg()?; // we need prelude::*, why?
-        println!("got something");
+        poller.poll(&mut events, Period::Infinite)?;
 
-        // Retrieve the routing_id to route the reply to the client.
-        id = request.routing_id().unwrap();
-        println!("{:?} seized with message: {}", id, request.to_str()?);
-        outgoing_notif.route("pong", id)?;
+        for event in &events {
+            match event.id() {
+                PollId(0) => { // SEIZE from notifier:
+                    let seize_req        = outgoing_notif.recv_msg()?; // we need prelude::*, why?
+                    current_notifier_id  = Some(seize_req.routing_id().unwrap());
+                    println!("routing id {:?} seized by: {}", current_notifier_id, seize_req.to_str()?);
+                    outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
+                }
+                PollId(1) => { // Forward to notifier:
+                    let notif_fwd = incoming_notif.recv_msg()?;
+                    let sender_id = notif_fwd.routing_id().unwrap();
+                    if let Some(current_notifier_id) = current_notifier_id {
+                        println!("to {:?} forwarding: {}", current_notifier_id, notif_fwd.to_str()?);
+                        outgoing_notif.route(notif_fwd, current_notifier_id)?;
+                        incoming_notif.route("ACK", sender_id)?;
+                    } else {
+                        incoming_notif.route("DROP", sender_id)?;
+                    }
+                }
+                _         => unreachable!(),
+            }
+        }
     }
-
-    //Ok(())
-    // let context         = zmq::Context::new();
-    // let mut notifier_id = String::from("kekette"); // default for now...
-    // let bind            = |s: &zmq::Socket, port| s.bind(format!("tcp://{}:{}", config.server_ip, port).as_str());
-
-    // let incoming_notif = context.socket(zmq::REP)?;
-    // let notifier_seize = context.socket(zmq::REP)?;
-    // let outgoing_notif = context.socket(zmq::PUB)?;
-
-    // bind(&incoming_notif, &config.incoming_notif_port)?;
-    // bind(&notifier_seize, &config.notifier_seize_port)?;
-    // bind(&outgoing_notif, &config.outgoing_notif_port)?;
-
-    // println!("Notification server listening");
-    // loop {
-    //     let mut items = [
-    //         incoming_notif.as_poll_item(zmq::POLLIN),
-    //         notifier_seize.as_poll_item(zmq::POLLIN),
-    //     ];
-    //     zmq::poll(&mut items, -1)?;
-
-    //     if items[0].is_readable() {
-    //         let notif_parts = incoming_notif.recv_multipart(0)?;
-    //         if notif_parts.len() != 4 {
-    //             println!("Dropping message with {} parts", notif_parts.len());
-    //             continue;
-    //         }
-    //         // could also use notif_parts.insert(notifier_id.clone(), 0), seemed uglier.
-    //         let routable_notif: [&[u8]; 5] = [
-    //             &notifier_id.as_str().as_bytes(), // PUB id env
-    //             &notif_parts[0],
-    //             &notif_parts[1],
-    //             &notif_parts[2],
-    //             &notif_parts[3],
-    //         ];
-    //         outgoing_notif.send_multipart(&routable_notif, 0)?;
-    //         incoming_notif.send("ack", 0)?;
-    //     }
-
-    //     if items[1].is_readable() {
-    //         if let Ok(id) = notifier_seize.recv_string(0)? {
-    //             println!("setting notifier subscribe to: {}", id);
-    //             // TODO: server will make a unique ID per client. better yet, use zmq for that.
-    //             // => dealer/router has what we want.
-    //             // yield to the new notifier:
-    //             notifier_id = id.clone();
-    //             notifier_seize.send("ack", 0)?;
-    //         };
-    //     }
-    // }
 }
 
 pub fn notify(config: Config, hostname: &str, id: String) -> Result<(), failure::Error> {
