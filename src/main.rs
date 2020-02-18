@@ -59,13 +59,13 @@ fn main() -> Result<(), failure::Error> {
     let config = Config::new(config_file)?;
 
     match matches.subcommand() {
-        // "send", Some(ms))   => run::send(
-        //    config,
-        //    hostname.as_str(),
-        //    get_v(ms, "SUMMARY"),
-        //    get_v(ms, "BODY"),
-        //    get_v(ms, "urgency"),
-        //),
+        ("send", Some(ms))   => run::send(
+            config,
+            hostname.as_str(),
+            get_v(ms, "SUMMARY"),
+            get_v(ms, "BODY"),
+            get_v(ms, "urgency"),
+        ),
         ("notify", Some(ms)) => run::notify(
             config,
             hostname.as_str(),

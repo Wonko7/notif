@@ -6,19 +6,21 @@ use libzmq::{prelude::*, poll::*, *};
 use signal_hook::{iterator::Signals, SIGHUP};
 
 
-pub fn send(config: Config, hostname: &str, summary: &str, body: &str, priority: &str) -> Result<(), failure::Error> {
+pub fn send(config: Config, hostname: &str, summary: &str, body: &str, urgency: &str) -> Result<(), failure::Error> {
     let _              = config.auth.build()?;
     let send_notif = config.sender.build()?; // better config FIXME
 
     let msg = Notification {
         hostname,
-        priority,
+        urgency,
         summary,
         body,
     };
 
-    send_notif.send(bincode::serialize(msg))?;
+    send_notif.send(bincode::serialize(&msg).unwrap())?;
     send_notif.recv_msg()?; // wait for ack.
+
+
     // TODO: add --verbose for this;
     // let ack = send_notif.recv_string(0)?;
     // println!("sent and got ack: {}", ack.unwrap()); // if ack isn't utf8 well panic.
@@ -70,18 +72,36 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
 
 pub fn notify(config: Config, hostname: &str, id: String) -> Result<(), failure::Error> {
     println!("notify");
+    let _            = config.auth.build()?;
+    let incoming_notif = config.notifier.build()?; // connect.
 
-    let _ = config.auth.build()?;
-    let notif_router = config.client.build()?; // connect.
+    incoming_notif.send("seize!")?;
 
-    notif_router.send("seize!")?;
-    println!("sent seize");
+    let mut poller     = Poller::new();
+    let mut events     = Events::new();
+
+    poller.add(&incoming_notif, PollId(0), READABLE)?;
 
     loop {
         println!("waiting");
-        let request = notif_router.recv_msg()?; // we need prelude::*, why?
-        println!("got {} {}", id, request.to_str()?);
+        poller.poll(&mut events, Period::Infinite)?;
+
+        for event in &events {
+            // event.is_readable()), .id = PollId(0), unwrap a result?
+            if event.is_readable() {
+                let msg = incoming_notif.recv_msg()?;
+                println!("len: {}", msg.len());
+
+                if msg.len() == 3 && msg.to_str()? == "ACK" {
+                    continue;
+                }
+                let notif: Notification = bincode::deserialize(&msg.as_bytes())?;
+                println!("so easy {:?}", notif);
+            }
+        }
     }
+
+    // let ack = notif_router.recv_msg()?; // we need prelude::*, why?
 
     // loop {
     //     let request = server.recv_msg()?; // we need prelude::*, why?
