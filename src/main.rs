@@ -2,10 +2,11 @@ extern crate clap;
 use clap::{Arg, AppSettings, App, crate_version};
 
 mod config;
-use config::Config;
 mod notif;
 mod run;
 
+use config::Config;
+use notif::Notification;
 
 fn get_v<'a>(opts: &'a clap::ArgMatches, name: &str) -> &'a str {
     // couldn't put a lifetime on a closure, this is just a helper to get values out of matches
@@ -28,6 +29,7 @@ fn main() -> Result<(), failure::Error> {
             .value_name("FILE")
             .help("Sets a custom config file")
             .takes_value(true))
+        // TODO add "generate" command for keys/config.
         .subcommand(App::new("send")
             .about("send a notification")
             .arg(Arg::with_name("SUMMARY")
@@ -45,31 +47,28 @@ fn main() -> Result<(), failure::Error> {
                 .possible_values(&["low", "normal", "critical"])
                 .help("urgency")))
         .subcommand(App::new("notify")
-            .about("show notifications")
-            .arg(Arg::with_name("ID")
-                .help("notifier ID")
-                .required(true)
-                .index(1)))
+            .about("show notifications"))
         .subcommand(App::new("route")
             .about("receive and forward notifications"))
         .get_matches();
 
     // TODO add --verbose args work again.
     let config_file = matches.value_of("config");
-    let config = Config::new(config_file)?;
+    let config      = Config::new(config_file)?;
 
     match matches.subcommand() {
         ("send", Some(ms))   => run::send(
             config,
-            hostname.as_str(),
-            get_v(ms, "SUMMARY"),
-            get_v(ms, "BODY"),
-            get_v(ms, "urgency"),
+            Notification {
+                hostname: hostname.as_str(),
+                summary:  get_v(ms, "SUMMARY"),
+                body:     get_v(ms, "BODY"),
+                urgency:  get_v(ms, "urgency"),
+            }
         ),
-        ("notify", Some(ms)) => run::notify(
+        ("notify", _) => run::notify(
             config,
-            hostname.as_str(),
-            get_v(ms, "ID").to_string() // because the thread takes ownership.
+            hostname.as_str()
         ),
         ("route", _)         => run::route(config),
         _                    => Err(failure::err_msg("unreachable"))
