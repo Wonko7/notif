@@ -50,15 +50,18 @@ fn main() -> Result<(), failure::Error> {
             .about("show notifications"))
         .subcommand(App::new("route")
             .about("receive and forward notifications"))
+        .subcommand(App::new("generate")
+            .about("generate pub/sec keys"))
         .get_matches();
 
     // TODO add --verbose args work again.
     let config_file = matches.value_of("config");
-    let config      = Config::new(config_file)?;
+    let config      = Config::new(config_file);
 
     match matches.subcommand() {
-        ("send", Some(ms))   => run::send(
-            config,
+        ("generate", _) => Ok(config::generate_keys()),
+        ("send", Some(ms)) => run::send(
+            config?,
             Notification {
                 hostname: hostname.as_str(),
                 summary:  get_v(ms, "SUMMARY"),
@@ -67,10 +70,10 @@ fn main() -> Result<(), failure::Error> {
             }
         ),
         ("notify", _) => run::notify(
-            config,
+            config?,
             hostname.as_str()
         ),
-        ("route", _)         => run::route(config),
-        _                    => Err(failure::err_msg("unreachable"))
+        ("route", _) => run::route(config?),
+        _ => unreachable!()
     }
 }

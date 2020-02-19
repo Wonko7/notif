@@ -1,6 +1,5 @@
 auth:
-  # The public keys allowed to authenticate. Note that this is
-  # the client's public key.
+  # The public keys allowed to authenticate.
   curve_registry:
     # notifier pub, sender pub:
     - "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
@@ -8,15 +7,15 @@ auth:
 
 sender:
   connect:
-    - tcp: "127.0.0.1:7777"
+    - tcp: "127.0.0.1:9691"
   heartbeat:
-      interval: 1s
-      timeout: 3s
-      ttl: 3s
+      interval: 60s
+      timeout: 180s
+      ttl: 180s
   send_high_water_mark: 10
-  send_timeout: 300ms
+  send_timeout: 30s
   recv_high_water_mark: 100
-  recv_timeout: 2100s #fuck me I'm not in love with this
+  recv_timeout: 30s
   mechanism:
     curve_client:
       client:
@@ -27,37 +26,37 @@ sender:
 
 router_in:
   bind:
-    - tcp: "127.0.0.1:7777"
+    - tcp: "127.0.0.1:9691"
   heartbeat:
-      interval: 1s
-      timeout: 3s
-      ttl: 3s
+      interval: 60s
+      timeout: 180s
+      ttl: 180s
   mechanism:
     curve_server:
       secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
 
 router_out:
   bind:
-    - tcp: "127.0.0.1:7778"
+    - tcp: "127.0.0.1:9692"
   heartbeat:
-      interval: 1s
-      timeout: 3s
-      ttl: 3s
+      interval: 60s
+      timeout: 180s
+      ttl: 180s
   mechanism:
     curve_server:
       secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
 
 notifier:
   connect:
-    - tcp: "127.0.0.1:7778"
+    - tcp: "127.0.0.1:9692"
   heartbeat:
-      interval: 1s
-      timeout: 3s
-      ttl: 3s
+      interval: 60s
+      timeout: 180s
+      ttl: 180s
   send_high_water_mark: 10
-  send_timeout: 300ms
+  send_timeout: 30s
   recv_high_water_mark: 100
-  recv_timeout: 2100s #fuck me I'm not in love with this
+  recv_timeout: 30s
   mechanism:
     curve_client:
       client:

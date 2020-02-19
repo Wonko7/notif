@@ -28,9 +28,7 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
     poller.add(&incoming_notif, PollId(1), READABLE)?;
 
     loop {
-        println!("waiting");
         poller.poll(&mut events, Period::Infinite)?;
-
         for event in &events {
             match event.id() {
                 PollId(0) => { // SEIZE from notifier:
@@ -39,7 +37,7 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
                     outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
                     // if verbose:
                     println!("routing id {:?} seized by: {}", current_notifier_id, seize_req.to_str()?);
-                }
+                },
                 PollId(1) => { // Forward to notifier:
                     let notif_fwd = incoming_notif.recv_msg()?;
                     let sender_id = notif_fwd.routing_id().unwrap();
@@ -51,7 +49,7 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
                     } else {
                         incoming_notif.route("DROP", sender_id)?;
                     }
-                }
+                },
                 _ => unreachable!(),
             }
         }
