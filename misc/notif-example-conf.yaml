@@ -1,76 +1,29 @@
-auth:
-  # The public keys allowed to authenticate.
-  curve_registry:
-    # notifier pub, sender pub:
-    - "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
-    - "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
+as_server: # route
+  incoming: "127.0.0.1:9691"
+  outgoing: "127.0.0.1:9692"
+  secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
+  auth: # The public keys allowed to authenticate.
+    curve_registry: # notifier pub, sender pub:
+      - "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
+      - "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
 
-sender:
-  connect:
-    - tcp: "127.0.0.1:9691"
-  heartbeat:
-      interval: 60s
-      timeout: 180s
-      ttl: 180s
-  send_high_water_mark: 10
-  send_timeout: 30s
-  recv_high_water_mark: 100
-  recv_timeout: 30s
-  mechanism:
-    curve_client:
-      client:
-        public: "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
-        secret: "apFYLNS*8cNu}2Nc>tve6BSnM7cVzCI#-EB>D!{1"
-      # This is the server's public key.
-      server: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
-
-router_in:
-  bind:
-    - tcp: "127.0.0.1:9691"
-  heartbeat:
-      interval: 60s
-      timeout: 180s
-      ttl: 180s
-  mechanism:
-    curve_server:
-      secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
-
-router_out:
-  bind:
-    - tcp: "127.0.0.1:9692"
-  heartbeat:
-      interval: 60s
-      timeout: 180s
-      ttl: 180s
-  mechanism:
-    curve_server:
-      secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
-
-notifier:
-  connect:
-    - tcp: "127.0.0.1:9692"
-  heartbeat:
-      interval: 60s
-      timeout: 180s
-      ttl: 180s
-  send_high_water_mark: 10
-  send_timeout: 30s
-  recv_high_water_mark: 100
-  recv_timeout: 30s
-  mechanism:
-    curve_client:
-      client:
-        public: "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
-        secret: "9oz*DI*GJR.fF:YpDLp^J(Js0M#2GD?JYQJ/k{h^"
-      # This is the server's public key.
-      server: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
-
-# router:
-# public: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
-# secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
-# sender:
-# public: "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
-# secret: "apFYLNS*8cNu}2Nc>tve6BSnM7cVzCI#-EB>D!{1"
-# notifier:
-# public: "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
-# secret: "9oz*DI*GJR.fF:YpDLp^J(Js0M#2GD?JYQJ/k{h^"
+as_client: # notify & send
+  server:
+    incoming: "127.0.0.1:9691"
+    outgoing: "127.0.0.1:9692"
+    public: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
+  public: "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
+  secret: "apFYLNS*8cNu}2Nc>tve6BSnM7cVzCI#-EB>D!{1"
+  #
+  # heartbeat:
+  #   interval: 60s
+  #   timeout: 180s
+  #   ttl: 180s
+  #
+  # send:
+  #   send_high_water_mark: 10
+  #   send_timeout: 30s
+  #
+  # recv:
+  #   recv_high_water_mark: 100
+  #   recv_timeout: 30s

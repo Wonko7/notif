@@ -1,0 +1,35 @@
+client:
+  connect:
+    - tcp: "SVR_IP:9691"
+  heartbeat:
+      interval: 60s
+      timeout: 180s
+      ttl: 180s
+  send_high_water_mark: 1000
+  send_timeout: 30s
+  recv_high_water_mark: 1000
+  recv_timeout: 30s
+  mechanism:
+    curve_client:
+      client:
+        public: "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
+        secret: "apFYLNS*8cNu}2Nc>tve6BSnM7cVzCI#-EB>D!{1"
+      # This is the server's public key.
+      server: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
+
+server:
+  bind:
+    - tcp: "127.0.0.1:9691"
+  heartbeat:
+      interval: 60s
+      timeout: 180s
+      ttl: 180s
+  mechanism:
+    curve_server:
+      secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
+
+auth:
+  # The public keys allowed to connect to the server:
+  curve_registry:
+    - "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
+    - "hUDSVwg!i)u[)ylP(4{g3Yr@Cval{q.2J0wA5vXy"
