@@ -1,13 +1,11 @@
 use crate::config::Config;
 use crate::notif::Notification;
 
-use serde::{Serialize, Deserialize};
 use libzmq::{prelude::*, poll::*, *};
 use signal_hook::{iterator::Signals, SIGHUP};
 
 
 pub fn send(config: Config, notif: Notification) -> Result<(), failure::Error> {
-    let _          = config.auth.build()?;
     let send_notif = config.sender.build()?; // better config FIXME
 
     send_notif.send(bincode::serialize(&notif).unwrap())?;
@@ -57,7 +55,6 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
 }
 
 pub fn notify(config: Config, hostname: &str) -> Result<(), failure::Error> {
-    let _              = config.auth.build()?;
     let incoming_notif = config.notifier.build()?; // connect.
     incoming_notif.send("seize!")?;
 
@@ -98,8 +95,8 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), failure::Error> {
                 }
         } else if let Ok(true) = from_int_rx.recv() {
             // if verbose:
-            println!("seizing from poll!");
-            incoming_notif.send("seize!")?;
+            println!("seizing!");
+            incoming_notif.send("SEIZE")?;
         }
     }
 }
