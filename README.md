@@ -1,30 +1,29 @@
 I use this to route notifications from remote machines to the current desktop I'm using.
 
 A central instance `notif route` receives notifications and forwards them to the latest registered notifier.
-A notifier is run with `notif notify hostname` on a desktop machine and shows the notifications.
+A notifier is run with `notif notify` on a desktop machine and shows the notifications.
 `notif send` is used in place of a local `notify-send`.
 
 
 Example:
 - remote machine A: `notif route`
-- laptop1: `notif notify laptop1`
-- laptop2: `notif notify laptop2`
+- laptop1: `notif notify`
+- laptop2: `notif notify`
 - remote machine B: `notif send -u critical "something noteworthy" "just happened"`
 
 
 Laptop2's notifier will receive & feed the notification to the desktop's notification manager and you'll see "*@machineB: something noteworthy* just happened".
 
 
-For this magic to happen notif looks for a config file in `~/.notif`, `/etc/notif`, or as an argument `notif -c <file>` with the following:
-```toml
-server_ip = "192.168.42.3"
-incoming_notif_port = 9691
-notifier_seize_port = 9692
-outgoing_notif_port = 9693
+For this magic to happen notif looks for a config file in `~/.notif`, `/etc/notif`, or as an argument `notif -c <file>`.
+
+```sh
+notif generate topo 10.99.0.1:9961 10.99.0.1:9962 5
 ```
+This will generate config files for 5 clients & a server with curve certificates for each.
 
 
-On a desktop I use it like this: this ensures that the machine that has most recently unlocked X session will receive the notifications.
+On a desktop I use `notif notify` with this: this ensures that the machine that has most recently unlocked X session will receive the notifications.
 ```sh
 xscreensaver-command -watch | while read xs; do
   case "$xs" in
