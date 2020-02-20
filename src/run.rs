@@ -1,14 +1,14 @@
+use failure::{Error, err_msg, format_err};
+use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
+use signal_hook::{iterator::Signals, SIGHUP};
+use std::time::Duration;
+
 use crate::config::Config;
 use crate::notif::Notification;
 
-use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
-use signal_hook::{iterator::Signals, SIGHUP};
-
-use std::time::Duration;
-
 static TIMEOUT: Duration = Duration::from_secs(60);
 
-pub fn send(config: Config, notif: Notification) -> Result<(), failure::Error> {
+pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     let client_creds = CurveClientCreds::new(config.as_client.server.public)
         .add_cert(config.as_client.cert);
     let send_notif   = ClientBuilder::new()
@@ -24,14 +24,18 @@ pub fn send(config: Config, notif: Notification) -> Result<(), failure::Error> {
     }
 
     send_notif.send(bincode::serialize(&notif).unwrap())?;
-    send_notif.recv_msg()?; // wait for ack.
-
-    Ok(())
+    let status = send_notif.recv_msg()?; // wait for ack.
+    let msg    = status.to_str()?;
+    if msg == "ACK" {
+        Ok(())
+    } else {
+        Err(format_err!("received: {}", msg))
+    }
 }
 
-pub fn route(config: Config) -> Result<(), failure::Error> {
+pub fn route(config: Config) -> Result<(), Error> {
     if let None = config.as_server {
-        return Err(failure::err_msg("missing as_server section in config"));
+        return Err(err_msg("missing as_server section in config"));
     }
     let mut current_notifier_id = None;
 
@@ -96,7 +100,7 @@ pub fn route(config: Config) -> Result<(), failure::Error> {
     }
 }
 
-pub fn notify(config: Config, hostname: &str) -> Result<(), failure::Error> {
+pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
         .add_cert(config.as_client.cert);
     let incoming_notif = ClientBuilder::new()

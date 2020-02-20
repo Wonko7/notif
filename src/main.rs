@@ -1,5 +1,6 @@
-extern crate clap;
 use clap::{Arg, AppSettings, App, crate_version};
+use failure::{Error};
+use libzmq::{prelude::TryInto};
 
 mod config;
 mod notif;
@@ -7,18 +8,15 @@ mod run;
 
 use config::Config;
 use notif::Notification;
-use libzmq::{prelude::TryInto};
 
 fn get_v<'a>(opts: &'a clap::ArgMatches, name: &str) -> &'a str {
     // couldn't put a lifetime on a closure, this is just a helper to get values out of matches
     opts.value_of(name).unwrap()
 }
 
-fn main() -> Result<(), failure::Error> {
-    let verbose  = false;
+fn main() -> Result<(), Error> {
     let hostname = hostname::get().unwrap().into_string().unwrap();
-
-    let matches = App::new("notif")
+    let matches  = App::new("notif")
         .version(crate_version!())
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .author("william@undefined.re")
@@ -59,11 +57,11 @@ fn main() -> Result<(), failure::Error> {
             .subcommand(App::new("topo")
                 .about("generate config files for one server and multiple clients")
                 .arg(Arg::with_name("INCOMING_ADDR")
-                    .help("server incoming notification tcp address")
+                    .help("server incoming notification TCP address: <host:port>")
                     .required(true)
                     .index(1))
                 .arg(Arg::with_name("OUTGOING_ADDR")
-                    .help("server outgoing notification tcp address")
+                    .help("server outgoing notification TCP address: <host:port>")
                     .required(true)
                     .index(2))
                 .arg(Arg::with_name("NB_CLIENTS")
@@ -99,7 +97,7 @@ fn main() -> Result<(), failure::Error> {
                 let nb_clients = get_v(ms, "NB_CLIENTS");
                 config::generate_topo(&incoming.try_into()?, &outgoing.try_into()?, nb_clients.parse().unwrap())
             }
-            _ => unreachable!() // FIXME check this.
+            _ => unreachable!()
         },
         _ => unreachable!()
     }

@@ -1,4 +1,3 @@
-extern crate serde;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]

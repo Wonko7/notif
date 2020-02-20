@@ -1,3 +1,4 @@
+use failure::{Error, err_msg};
 use std::fs::File;
 use std::io::{Write};
 
@@ -11,14 +12,13 @@ pub struct SrvConfig {
     pub secret:   CurveSecretKey,
     pub auth:     AuthConfig,
 }
-
 impl SrvConfig {
     fn new(incoming: &TcpAddr, outgoing: &TcpAddr, secret: &CurveSecretKey, auth: &AuthConfig) -> SrvConfig {
         SrvConfig { // not pretty, but only used to make topo config files.
             incoming: incoming.clone(),
             outgoing: outgoing.clone(),
-            secret: secret.clone(),
-            auth: auth.clone(),
+            secret:   secret.clone(),
+            auth:     auth.clone(),
         }
     }
 }
@@ -33,9 +33,8 @@ pub struct SrvToConnect {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct CliConfig {
     pub server: SrvToConnect,
-    pub cert: CurveCert,
+    pub cert:   CurveCert,
 }
-
 impl CliConfig {
     fn new(incoming: &TcpAddr, outgoing: &TcpAddr, public: &CurvePublicKey, cert: &CurveCert) -> CliConfig {
         CliConfig { // not pretty, but only used to make topo config files.
@@ -59,7 +58,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(file: std::option::Option<&str>) -> Result<Config, failure::Error> {
+    pub fn new(file: std::option::Option<&str>) -> Result<Config, Error> {
 
         if let Some(file) = file {
             let content = std::fs::read_to_string(file)
@@ -79,7 +78,7 @@ impl Config {
             return Ok(serde_yaml::from_str(content.as_str())?);
         };
 
-        Err(failure::err_msg("no config file"))
+        Err(err_msg("no config file"))
     }
 
     fn as_client(as_client: CliConfig) -> Config {
@@ -105,7 +104,7 @@ pub fn generate_keys() {
     println!("secret: \"{}\"", cert.secret().as_str());
 }
 
-pub fn generate_topo(incoming: &TcpAddr, outgoing: &TcpAddr, nb_clients: u32) -> Result<(), failure::Error> {
+pub fn generate_topo(incoming: &TcpAddr, outgoing: &TcpAddr, nb_clients: u32) -> Result<(), Error> {
     let server_cert  = CurveCert::new_unique();
     let mut registry = Vec::new();
 
