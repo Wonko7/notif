@@ -31,7 +31,6 @@ fn main() -> Result<(), failure::Error> {
             .value_name("FILE")
             .help("Sets a custom config file")
             .takes_value(true))
-        // TODO add "generate" command for keys/config.
         .subcommand(App::new("send")
             .about("send a notification")
             .arg(Arg::with_name("SUMMARY")
@@ -53,21 +52,30 @@ fn main() -> Result<(), failure::Error> {
         .subcommand(App::new("route")
             .about("receive and forward notifications"))
         .subcommand(App::new("generate")
-            .about("generate pub/sec keys"))
+            .setting(AppSettings::SubcommandRequiredElseHelp)
+            .about("helpers for config files")
+            .subcommand(App::new("keys")
+                .about("generate key pair"))
+            .subcommand(App::new("topo")
+                .about("generate config files for one server and multiple clients")
+                .arg(Arg::with_name("INCOMING_ADDR")
+                    .help("server incoming notification tcp address")
+                    .required(true)
+                    .index(1))
+                .arg(Arg::with_name("OUTGOING_ADDR")
+                    .help("server outgoing notification tcp address")
+                    .required(true)
+                    .index(2))
+                .arg(Arg::with_name("NB_CLIENTS")
+                    .help("number of client configs to generate")
+                    .required(true)
+                    .index(3))))
         .get_matches();
 
     let config_file = matches.value_of("config");
     let config      = Config::new(config_file);
-    // let config      = Config::new(Some("misc/notif-example-conf.yaml"));
-    let config      = Config::new(Some("misc/topo/server.notif"));
-    //
-    //let inc: TcpAddr = ;
-    //let out: TcpAddr = "10.0.0.1:9962".try_into()?;
-    //config::generate_topo(&"10.0.0.1:9961".try_into()?, &"10.0.0.1:9962".try_into()?, 5);
-    //config::generate_topo(&"127.0.0.1:9961".try_into()?, &"127.0.0.1:9962".try_into()?, 5);
 
     match matches.subcommand() {
-        ("generate", _) => Ok(config::generate_keys()),
         ("send", Some(ms)) => run::send(
             config?,
             Notification {
@@ -82,6 +90,17 @@ fn main() -> Result<(), failure::Error> {
             hostname.as_str()
         ),
         ("route", _) => run::route(config?),
+        // config:
+        ("generate", Some(ms)) => match ms.subcommand() {
+            ("keys", _) => Ok(config::generate_keys()),
+            ("topo", Some(ms)) => {
+                let incoming   = get_v(ms, "INCOMING_ADDR");
+                let outgoing   = get_v(ms, "OUTGOING_ADDR");
+                let nb_clients = get_v(ms, "NB_CLIENTS");
+                config::generate_topo(&incoming.try_into()?, &outgoing.try_into()?, nb_clients.parse().unwrap())
+            }
+            _ => unreachable!() // FIXME check this.
+        },
         _ => unreachable!()
     }
 }
