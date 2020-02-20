@@ -1,11 +1,12 @@
 [package]
 name        = "notif"
-version     = "0.0.6"
+version     = "0.0.7"
 authors     = ["William <william@undefined.re>"]
 edition     = "2018"
 license     = "GPL-2.0"
 description = "route remote notifications to current desktop"
 homepage    = "https://github.com/Wonko7/rust-notif"
+readme      = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
