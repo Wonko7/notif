@@ -1,7 +1,7 @@
-use crate::config::Config;
+use crate::config::{Config, FileConfig};
 use crate::notif::Notification;
 
-use libzmq::{prelude::*, poll::*, *};
+use libzmq::{prelude::*, poll::*, auth::CurveServerCreds, *};
 use signal_hook::{iterator::Signals, SIGHUP};
 
 
@@ -14,10 +14,20 @@ pub fn send(config: Config, notif: Notification) -> Result<(), failure::Error> {
     Ok(())
 }
 
-pub fn route(config: Config) -> Result<(), failure::Error> {
+pub fn route(config: FileConfig) -> Result<(), failure::Error> {
     let mut current_notifier_id = None;
-    let _                       = config.auth.build()?;
-    let incoming_notif          = config.router_in.build()?; // better config FIXME
+    let _                       = config.as_server.auth.build()?;
+//     let server = ServerBuilder::new()
+//         .bind(&addr)
+//         .mechanism(server_creds)
+//         .recv_timeout(Duration::from_millis(200))
+    let server_creds = CurveServerCreds::new(config.as_server.secret);
+    let incoming_notif          = ServerBuilder::new()
+        .bind(config.as_server.incoming)
+        .mechanism(server_creds.clone())
+        .heartbeat(config.hb)
+        .build()?;
+
     let outgoing_notif          = config.router_out.build()?;
     let mut poller              = Poller::new();
     let mut events              = Events::new();

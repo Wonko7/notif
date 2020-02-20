@@ -14,16 +14,16 @@ as_client: # notify & send
     public: "Rdpg++-ha$=+gP?*78p?4vA?Q@6?=.<7+0)Z:#^3"
   public: "Bl2r<yorljp40q#dNlCYjrBbb*bos/a1=6^u2Yjk"
   secret: "apFYLNS*8cNu}2Nc>tve6BSnM7cVzCI#-EB>D!{1"
-  #
-  # heartbeat:
-  #   interval: 60s
-  #   timeout: 180s
-  #   ttl: 180s
-  #
-  # send:
-  #   send_high_water_mark: 10
-  #   send_timeout: 30s
-  #
-  # recv:
-  #   recv_high_water_mark: 100
-  #   recv_timeout: 30s
+
+heartbeat:
+  interval: 60s
+  timeout: 180s
+  ttl: 180s
+
+send:
+  send_high_water_mark: 10
+  send_timeout: 30s
+
+recv:
+  recv_high_water_mark: 100
+  recv_timeout: 30s

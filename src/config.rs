@@ -1,6 +1,5 @@
 use serde::Deserialize;
-use libzmq::auth::*;
-use libzmq::TcpAddr;
+use libzmq::{auth::{CurvePublicKey, CurveSecretKey}, Heartbeat, Period, TcpAddr};
 
 pub fn generate_keys() {
     let cert = CurveCert::new_unique();
@@ -30,20 +29,35 @@ pub struct SrvConfig {
 pub struct SrvToConnect {
     pub incoming: TcpAddr,
     pub outgoing: TcpAddr,
-    pub public:   CurveSecretKey,
+    pub public:   CurvePublicKey,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct CliConfig {
-    pub server: SrvToConnect ,
-    pub public: CurveSecretKey,
+    pub server: SrvToConnect,
+    pub public: CurvePublicKey,
     pub secret: CurveSecretKey,
 }
 
 #[derive(Deserialize, Debug)]
+pub struct RecvConfig {
+    pub send_hwm: i32,
+    pub send_timeout: Period,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SendConfig {
+    pub send_hwm: i32,
+    pub send_timeout: Period,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct FileConfig {
-    pub as_server: Option<SrvConfig>,
-    pub as_client: Option<CliConfig>,
+    pub as_server: SrvConfig,
+    pub as_client: CliConfig,
+    pub heartbeat: Option<Heartbeat>,
+    pub send_config: Option<SendConfig>,
+    pub recv_config: Option<RecvConfig>,
 }
 
 impl Config {
@@ -72,10 +86,10 @@ impl Config {
 }
 
 
-pub fn read_conf() ->  Result<Config, failure::Error> {
+pub fn read_conf() ->  Result<FileConfig, failure::Error> {
     let content = std::fs::read_to_string("misc/notif-example-conf.yaml")?;
     let mut fc: FileConfig = serde_yaml::from_str(content.as_str())?;
     let soc_conf = "tcp://192.168.0.1:9999";
 
-    fc.server.bind = soc_conf;
+    Ok(fc)
 }
