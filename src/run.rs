@@ -30,21 +30,25 @@ pub fn send(config: Config, notif: Notification) -> Result<(), failure::Error> {
 }
 
 pub fn route(config: Config) -> Result<(), failure::Error> {
+    if let None = config.as_server {
+        return Err(failure::err_msg("missing as_server section in config"));
+    }
     let mut current_notifier_id = None;
 
-    let _auth_registry = config.as_server.auth.build()?;
-    let server_creds   = CurveServerCreds::new(config.as_server.secret);
+    let srv_config     = config.as_server.unwrap();
+    let _auth_registry = srv_config.auth.build()?;
+    let server_creds   = CurveServerCreds::new(srv_config.secret);
     let heartbeat      = Heartbeat::new(TIMEOUT)
         .add_timeout(2 * TIMEOUT);
     let incoming_notif = ServerBuilder::new()
-        .bind(config.as_server.incoming)
+        .bind(srv_config.incoming)
         .mechanism(&server_creds)
         .heartbeat(&heartbeat)
         .recv_timeout(TIMEOUT)
         .send_timeout(TIMEOUT)
         .build()?;
     let outgoing_notif = ServerBuilder::new()
-        .bind(config.as_server.outgoing)
+        .bind(srv_config.outgoing)
         .mechanism(&server_creds)
         .heartbeat(&heartbeat)
         .recv_timeout(TIMEOUT)

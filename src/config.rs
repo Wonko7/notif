@@ -36,7 +36,7 @@ pub struct SendConfig {
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub as_server: SrvConfig,
+    pub as_server: Option<SrvConfig>,
     pub as_client: CliConfig,
     pub verbose: Option<bool>,
 }

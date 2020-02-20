@@ -55,7 +55,6 @@ fn main() -> Result<(), failure::Error> {
             .about("generate pub/sec keys"))
         .get_matches();
 
-    // TODO add --verbose args work again.
     let config_file = matches.value_of("config");
     let config      = Config::new(config_file);
     // let config      = Config::new(Some("misc/notif-example-conf.yaml"));
