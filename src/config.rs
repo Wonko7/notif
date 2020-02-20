@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{Write};
 
 use serde::{Deserialize, Serialize};
-use libzmq::{auth::{AuthBuilder, CurveCert, CurvePublicKey, CurveSecretKey}, Heartbeat, Period, TcpAddr, config::AuthConfig};
+use libzmq::{auth::{CurveCert, CurvePublicKey, CurveSecretKey}, TcpAddr, config::AuthConfig};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct SrvConfig {

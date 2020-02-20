@@ -7,7 +7,7 @@ mod run;
 
 use config::Config;
 use notif::Notification;
-use libzmq::{TcpAddr, prelude::TryInto};
+use libzmq::{prelude::TryInto};
 
 fn get_v<'a>(opts: &'a clap::ArgMatches, name: &str) -> &'a str {
     // couldn't put a lifetime on a closure, this is just a helper to get values out of matches
