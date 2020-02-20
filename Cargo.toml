@@ -16,7 +16,8 @@ bincode     = "1.2.1"
 dirs        = "2.0.2"
 failure     = "0.1.6"
 hostname    = "0.3.0"
-libzmq      = { version = "0.2", features = ["curve"] }
+# FIXME https://github.com/jean-airoldie/libzmq-rs/issues/125
+libzmq      = { git = "https://github.com/jean-airoldie/libzmq-rs/", features = ["curve"] }
 serde       = { version = "1.0", features = ["derive"] }
 serde_yaml  = "0.8"
 signal-hook = "0.1.13"
