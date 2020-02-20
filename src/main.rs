@@ -7,6 +7,7 @@ mod run;
 
 use config::Config;
 use notif::Notification;
+use libzmq::{TcpAddr, prelude::TryInto};
 
 fn get_v<'a>(opts: &'a clap::ArgMatches, name: &str) -> &'a str {
     // couldn't put a lifetime on a closure, this is just a helper to get values out of matches
@@ -58,6 +59,12 @@ fn main() -> Result<(), failure::Error> {
     let config_file = matches.value_of("config");
     let config      = Config::new(config_file);
     // let config      = Config::new(Some("misc/notif-example-conf.yaml"));
+    let config      = Config::new(Some("misc/topo/server.notif"));
+    //
+    //let inc: TcpAddr = ;
+    //let out: TcpAddr = "10.0.0.1:9962".try_into()?;
+    //config::generate_topo(&"10.0.0.1:9961".try_into()?, &"10.0.0.1:9962".try_into()?, 5);
+    //config::generate_topo(&"127.0.0.1:9961".try_into()?, &"127.0.0.1:9962".try_into()?, 5);
 
     match matches.subcommand() {
         ("generate", _) => Ok(config::generate_keys()),

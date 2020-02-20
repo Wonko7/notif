@@ -1,43 +1,60 @@
-use serde::Deserialize;
-use libzmq::{auth::{CurveCert, CurvePublicKey, CurveSecretKey}, Heartbeat, Period, TcpAddr};
+use std::fs::File;
+use std::io::{Write};
 
-#[derive(Deserialize, Debug)]
+use serde::{Deserialize, Serialize};
+use libzmq::{auth::{AuthBuilder, CurveCert, CurvePublicKey, CurveSecretKey}, Heartbeat, Period, TcpAddr, config::AuthConfig};
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct SrvConfig {
     pub incoming: TcpAddr,
     pub outgoing: TcpAddr,
     pub secret:   CurveSecretKey,
-    pub auth:     libzmq::config::AuthConfig,
+    pub auth:     AuthConfig,
 }
 
-#[derive(Deserialize, Debug)]
+impl SrvConfig {
+    fn new(incoming: &TcpAddr, outgoing: &TcpAddr, secret: &CurveSecretKey, auth: &AuthConfig) -> SrvConfig {
+        SrvConfig {
+            incoming: incoming.clone(),
+            outgoing: outgoing.clone(),
+            secret: secret.clone(),
+            auth: auth.clone(),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct SrvToConnect {
     pub incoming: TcpAddr,
     pub outgoing: TcpAddr,
     pub public:   CurvePublicKey,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct CliConfig {
     pub server: SrvToConnect,
     pub cert: CurveCert,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct RecvConfig {
-    pub send_hwm: i32,
-    pub send_timeout: Period,
+impl CliConfig {
+    fn new(incoming: &TcpAddr, outgoing: &TcpAddr, public: &CurvePublicKey, cert: &CurveCert) -> CliConfig {
+        CliConfig {
+            server: SrvToConnect {
+                incoming: incoming.clone(),
+                outgoing: outgoing.clone(),
+                public: public.clone(),
+            },
+            cert: cert.clone(), // not pretty, but only used to make topo config files.
+        }
+    }
 }
 
-#[derive(Deserialize, Debug)]
-pub struct SendConfig {
-    pub send_hwm: i32,
-    pub send_timeout: Period,
-}
-
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub as_server: Option<SrvConfig>,
     pub as_client: CliConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub verbose: Option<bool>,
 }
 
@@ -64,10 +81,58 @@ impl Config {
 
         Err(failure::err_msg("no config file"))
     }
+
+    fn as_client(as_client: CliConfig) -> Config {
+        Config {
+            as_client,
+            as_server: None,
+            verbose: None,
+        }
+    }
+
+    fn as_server(as_client: CliConfig, as_server: SrvConfig) -> Config {
+        Config {
+            as_client,
+            as_server: Some(as_server),
+            verbose: None,
+        }
+    }
 }
 
 pub fn generate_keys() {
     let cert = CurveCert::new_unique();
     println!("public: \"{}\"", cert.public().as_str());
     println!("secret: \"{}\"", cert.secret().as_str());
+}
+
+pub fn generate_topo(incoming: &TcpAddr, outgoing: &TcpAddr, nb_clients: u32) -> Result<(), failure::Error> {
+    let server_cert  = CurveCert::new_unique();
+    let mut registry = Vec::new();
+
+    for i in 0..nb_clients {
+        println!("{}", i);
+        let cli_cert   = CurveCert::new_unique();
+        let as_client  = CliConfig::new(&incoming, &outgoing, server_cert.public(), &cli_cert);
+        let cli_config = Config::as_client(as_client);
+
+        let mut client_file = File::create(format!("client-{}.notif", i))?;
+        write!(client_file, "{}", serde_yaml::to_string(&cli_config)?)?;
+
+        registry.push(cli_cert.public().clone());
+    }
+
+    let mut srv_auth = AuthConfig::new();
+
+    let cli_cert   = CurveCert::new_unique();
+    let as_client  = CliConfig::new(&incoming, &outgoing, server_cert.public(), &cli_cert);
+    registry.push(cli_cert.public().clone());
+    srv_auth.set_curve_registry(Some(&registry));
+
+    let as_server  = SrvConfig::new(&incoming, &outgoing, server_cert.secret(), &srv_auth);
+    let srv_config = Config::as_server(as_client, as_server);
+
+    let mut srv_file = File::create("server.notif")?;
+    write!(srv_file, "{}", serde_yaml::to_string(&srv_config)?)?;
+
+    Ok(())
 }
