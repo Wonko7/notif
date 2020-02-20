@@ -1,12 +1,27 @@
-use crate::config::{Config, FileConfig};
+use crate::config::Config;
 use crate::notif::Notification;
 
-use libzmq::{prelude::*, poll::*, auth::CurveServerCreds, *};
+use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
 use signal_hook::{iterator::Signals, SIGHUP};
 
+use std::time::Duration;
+
+static TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn send(config: Config, notif: Notification) -> Result<(), failure::Error> {
-    let send_notif = config.sender.build()?; // better config FIXME
+    let client_creds = CurveClientCreds::new(config.as_client.server.public)
+        .add_cert(config.as_client.cert);
+    let send_notif   = ClientBuilder::new()
+        .connect(&config.as_client.server.incoming)
+        .recv_timeout(TIMEOUT)
+        .send_timeout(TIMEOUT)
+        .mechanism(client_creds)
+        .build()?;
+
+    if let Some(true) = config.verbose {
+        println!("connect: {:?}", &config.as_client.server.incoming);
+        println!("sent seizing!");
+    }
 
     send_notif.send(bincode::serialize(&notif).unwrap())?;
     send_notif.recv_msg()?; // wait for ack.
@@ -14,24 +29,30 @@ pub fn send(config: Config, notif: Notification) -> Result<(), failure::Error> {
     Ok(())
 }
 
-pub fn route(config: FileConfig) -> Result<(), failure::Error> {
+pub fn route(config: Config) -> Result<(), failure::Error> {
     let mut current_notifier_id = None;
-    let _                       = config.as_server.auth.build()?;
-//     let server = ServerBuilder::new()
-//         .bind(&addr)
-//         .mechanism(server_creds)
-//         .recv_timeout(Duration::from_millis(200))
-    let server_creds = CurveServerCreds::new(config.as_server.secret);
-    let incoming_notif          = ServerBuilder::new()
+
+    let _auth_registry = config.as_server.auth.build()?;
+    let server_creds   = CurveServerCreds::new(config.as_server.secret);
+    let heartbeat      = Heartbeat::new(TIMEOUT)
+        .add_timeout(2 * TIMEOUT);
+    let incoming_notif = ServerBuilder::new()
         .bind(config.as_server.incoming)
-        .mechanism(server_creds.clone())
-        .heartbeat(config.hb)
+        .mechanism(&server_creds)
+        .heartbeat(&heartbeat)
+        .recv_timeout(TIMEOUT)
+        .send_timeout(TIMEOUT)
+        .build()?;
+    let outgoing_notif = ServerBuilder::new()
+        .bind(config.as_server.outgoing)
+        .mechanism(&server_creds)
+        .heartbeat(&heartbeat)
+        .recv_timeout(TIMEOUT)
+        .send_timeout(TIMEOUT)
         .build()?;
 
-    let outgoing_notif          = config.router_out.build()?;
-    let mut poller              = Poller::new();
-    let mut events              = Events::new();
-
+    let mut poller = Poller::new();
+    let mut events = Events::new();
     poller.add(&outgoing_notif, PollId(0), READABLE)?;
     poller.add(&incoming_notif, PollId(1), READABLE)?;
 
@@ -40,11 +61,12 @@ pub fn route(config: FileConfig) -> Result<(), failure::Error> {
         for event in &events {
             match event.id() {
                 PollId(0) => { // SEIZE from notifier:
-                    let seize_req        = outgoing_notif.recv_msg()?; // we need prelude::*, why?
-                    current_notifier_id  = Some(seize_req.routing_id().unwrap());
+                    let seize_req       = outgoing_notif.recv_msg()?; // we need prelude::*, why?
+                    current_notifier_id = Some(seize_req.routing_id().unwrap());
                     outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
-                    // if verbose:
-                    println!("routing id {:?} seized by: {}", current_notifier_id, seize_req.to_str()?);
+                    if let Some(true) = config.verbose {
+                        println!("routing id {:?} seized with msg: {}", current_notifier_id, seize_req.to_str()?);
+                    }
                 },
                 PollId(1) => { // Forward to notifier:
                     let notif_fwd = incoming_notif.recv_msg()?;
@@ -54,8 +76,14 @@ pub fn route(config: FileConfig) -> Result<(), failure::Error> {
                         outgoing_notif.route(notif_fwd, current_notifier_id)
                             .unwrap_or_else(|_e| incoming_notif.route("DROP", sender_id).unwrap()); // current_notifier might have fucked off.
                         incoming_notif.route("ACK", sender_id)?;
+                        if let Some(true) = config.verbose {
+                            println!("Forward message to routing id {:?}", current_notifier_id);
+                        }
                     } else {
                         incoming_notif.route("DROP", sender_id)?;
+                        if let Some(true) = config.verbose {
+                            println!("dropping, no notifier");
+                        }
                     }
                 },
                 _ => unreachable!(),
@@ -65,8 +93,16 @@ pub fn route(config: FileConfig) -> Result<(), failure::Error> {
 }
 
 pub fn notify(config: Config, hostname: &str) -> Result<(), failure::Error> {
-    let incoming_notif = config.notifier.build()?; // connect.
-    incoming_notif.send("seize!")?;
+    let client_creds   = CurveClientCreds::new(config.as_client.server.public)
+        .add_cert(config.as_client.cert);
+    let incoming_notif = ClientBuilder::new()
+        .connect(config.as_client.server.outgoing)
+        .recv_timeout(TIMEOUT)
+        .send_timeout(TIMEOUT)
+        .mechanism(client_creds)
+        .build()?;
+
+    incoming_notif.send("SEIZE")?;
 
     // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
     let (tx, from_int_rx) = std::sync::mpsc::channel();
@@ -77,8 +113,8 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), failure::Error> {
         }
     });
 
-    let mut poller     = Poller::new();
-    let mut events     = Events::new();
+    let mut poller = Poller::new();
+    let mut events = Events::new();
     poller.add(&incoming_notif, PollId(0), READABLE)?;
 
     loop {
@@ -104,9 +140,10 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), failure::Error> {
                     .wait()?;
                 }
         } else if let Ok(true) = from_int_rx.recv() {
-            // if verbose:
-            println!("seizing!");
             incoming_notif.send("SEIZE")?;
+            if let Some(true) = config.verbose {
+                println!("seizing!");
+            }
         }
     }
 }

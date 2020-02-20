@@ -22,6 +22,7 @@ fn main() -> Result<(), failure::Error> {
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .author("william@undefined.re")
         .about("routes remote notifications to you")
+        // add -v --verbose for verbose println
         .arg(Arg::with_name("config") // TODO: does not work, but should be fine: https://github.com/clap-rs/clap/issues/1570
             //.short('c')
             .short("c")
@@ -57,7 +58,7 @@ fn main() -> Result<(), failure::Error> {
     // TODO add --verbose args work again.
     let config_file = matches.value_of("config");
     let config      = Config::new(config_file);
-    println!("{:?}", config::read_conf().unwrap());
+    // let config      = Config::new(Some("misc/notif-example-conf.yaml"));
 
     match matches.subcommand() {
         ("generate", _) => Ok(config::generate_keys()),
