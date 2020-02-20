@@ -14,7 +14,7 @@ pub struct SrvConfig {
 
 impl SrvConfig {
     fn new(incoming: &TcpAddr, outgoing: &TcpAddr, secret: &CurveSecretKey, auth: &AuthConfig) -> SrvConfig {
-        SrvConfig {
+        SrvConfig { // not pretty, but only used to make topo config files.
             incoming: incoming.clone(),
             outgoing: outgoing.clone(),
             secret: secret.clone(),
@@ -38,13 +38,13 @@ pub struct CliConfig {
 
 impl CliConfig {
     fn new(incoming: &TcpAddr, outgoing: &TcpAddr, public: &CurvePublicKey, cert: &CurveCert) -> CliConfig {
-        CliConfig {
+        CliConfig { // not pretty, but only used to make topo config files.
             server: SrvToConnect {
                 incoming: incoming.clone(),
                 outgoing: outgoing.clone(),
                 public: public.clone(),
             },
-            cert: cert.clone(), // not pretty, but only used to make topo config files.
+            cert: cert.clone(),
         }
     }
 }
@@ -122,14 +122,12 @@ pub fn generate_topo(incoming: &TcpAddr, outgoing: &TcpAddr, nb_clients: u32) ->
     }
 
     let mut srv_auth = AuthConfig::new();
-
-    let cli_cert   = CurveCert::new_unique();
-    let as_client  = CliConfig::new(&incoming, &outgoing, server_cert.public(), &cli_cert);
+    let cli_cert     = CurveCert::new_unique();
+    let as_client    = CliConfig::new(&incoming, &outgoing, server_cert.public(), &cli_cert);
     registry.push(cli_cert.public().clone());
     srv_auth.set_curve_registry(Some(&registry));
-
-    let as_server  = SrvConfig::new(&incoming, &outgoing, server_cert.secret(), &srv_auth);
-    let srv_config = Config::as_server(as_client, as_server);
+    let as_server    = SrvConfig::new(&incoming, &outgoing, server_cert.secret(), &srv_auth);
+    let srv_config   = Config::as_server(as_client, as_server);
 
     let mut srv_file = File::create("server.notif")?;
     write!(srv_file, "{}", serde_yaml::to_string(&srv_config)?)?;
