@@ -112,8 +112,8 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
     incoming_notif.send("SEIZE")?;
 
     // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
-    let (tx, from_int_rx) = std::sync::mpsc::channel();
-    let signals           = Signals::new(&[SIGHUP])?;
+    let (tx, interrupt_rx) = std::sync::mpsc::channel();
+    let signals            = Signals::new(&[SIGHUP])?;
     std::thread::spawn(move || {
         for _signal in signals.forever() {
             tx.send(true).unwrap();
@@ -146,7 +146,7 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
                     .spawn()?
                     .wait()?;
                 }
-        } else if let Ok(true) = from_int_rx.recv() {
+        } else if let Ok(true) = interrupt_rx.recv() {
             incoming_notif.send("SEIZE")?;
             if let Some(true) = config.verbose {
                 println!("seizing!");
