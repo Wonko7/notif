@@ -1,6 +1,5 @@
 use failure::{Error, err_msg};
-use std::fs::File;
-use std::io::{Write};
+use std::{fs::File, io::Write};
 
 use serde::{Deserialize, Serialize};
 use libzmq::{auth::{CurveCert, CurvePublicKey, CurveSecretKey}, TcpAddr, config::AuthConfig};
@@ -41,7 +40,7 @@ impl CliConfig {
             server: SrvToConnect {
                 incoming: incoming.clone(),
                 outgoing: outgoing.clone(),
-                public: public.clone(),
+                public:   public.clone(),
             },
             cert: cert.clone(),
         }

@@ -19,8 +19,7 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
         .build()?;
 
     if let Some(true) = config.verbose {
-        println!("connect: {:?}", &config.as_client.server.incoming);
-        println!("sent seizing!");
+        println!("connect: {}", &config.as_client.server.incoming);
     }
 
     send_notif.send(bincode::serialize(&notif).unwrap())?;
@@ -73,7 +72,7 @@ pub fn route(config: Config) -> Result<(), Error> {
                     current_notifier_id = Some(seize_req.routing_id().unwrap());
                     outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
                     if let Some(true) = config.verbose {
-                        println!("routing id {:?} seized with msg: {}", current_notifier_id, seize_req.to_str()?);
+                        println!("routing id {} seized with msg: {}", current_notifier_id.unwrap().0, seize_req.to_str()?);
                     }
                 },
                 PollId(1) => { // Forward to notifier:
@@ -113,8 +112,8 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
     incoming_notif.send("SEIZE")?;
 
     // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
-    let (tx, from_int_rx) = std::sync::mpsc::channel();
-    let signals           = Signals::new(&[SIGHUP])?;
+    let (tx, interrupt_rx) = std::sync::mpsc::channel();
+    let signals            = Signals::new(&[SIGHUP])?;
     std::thread::spawn(move || {
         for _signal in signals.forever() {
             tx.send(true).unwrap();
@@ -147,7 +146,7 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
                     .spawn()?
                     .wait()?;
                 }
-        } else if let Ok(true) = from_int_rx.recv() {
+        } else if let Ok(true) = interrupt_rx.recv() {
             incoming_notif.send("SEIZE")?;
             if let Some(true) = config.verbose {
                 println!("seizing!");
