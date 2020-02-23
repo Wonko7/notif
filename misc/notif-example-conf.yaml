@@ -1,5 +1,7 @@
 as_server: # route
+  # senders connect to incoming to send notifications
   incoming: "127.0.0.1:9691"
+  # notifiers connect to outgoing to receive notifications
   outgoing: "127.0.0.1:9692"
   secret: "n4lr/>*v63WsRlM@{kkCsgz??Yg8}I8yjuj..:cy"
   auth: # The public keys allowed to authenticate.

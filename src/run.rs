@@ -6,12 +6,13 @@ use std::time::Duration;
 use crate::config::Config;
 use crate::notif::Notification;
 
-static TIMEOUT: Duration = Duration::from_secs(60);
+// FIXME: needs empirical data
+static TIMEOUT: Duration = Duration::from_secs(5);
 
 pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
-    let client_creds = CurveClientCreds::new(config.as_client.server.public)
+    let client_creds   = CurveClientCreds::new(config.as_client.server.public)
         .add_cert(config.as_client.cert);
-    let send_notif   = ClientBuilder::new()
+    let outgoing_notif = ClientBuilder::new()
         .connect(&config.as_client.server.incoming)
         .recv_timeout(TIMEOUT)
         .send_timeout(TIMEOUT)
@@ -19,11 +20,11 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
         .build()?;
 
     if let Some(true) = config.verbose {
-        println!("connect: {}", &config.as_client.server.incoming);
+        println!("sending to: {}", &config.as_client.server.incoming);
     }
 
-    send_notif.send(bincode::serialize(&notif).unwrap())?;
-    let status = send_notif.recv_msg()?; // wait for ack.
+    outgoing_notif.send(bincode::serialize(&notif).unwrap())?;
+    let status = outgoing_notif.recv_msg()?; // wait for ack.
     let msg    = status.to_str()?;
     if msg == "ACK" {
         Ok(())
@@ -44,19 +45,24 @@ pub fn route(config: Config) -> Result<(), Error> {
     let heartbeat      = Heartbeat::new(TIMEOUT)
         .add_timeout(2 * TIMEOUT);
     let incoming_notif = ServerBuilder::new()
-        .bind(srv_config.incoming)
+        .bind(&srv_config.incoming)
         .mechanism(&server_creds)
         .heartbeat(&heartbeat)
         .recv_timeout(TIMEOUT)
         .send_timeout(TIMEOUT)
         .build()?;
     let outgoing_notif = ServerBuilder::new()
-        .bind(srv_config.outgoing)
+        .bind(&srv_config.outgoing)
         .mechanism(&server_creds)
         .heartbeat(&heartbeat)
         .recv_timeout(TIMEOUT)
         .send_timeout(TIMEOUT)
         .build()?;
+
+    if let Some(true) = config.verbose {
+        println!("listening for incoming notifications on: {}", &srv_config.incoming);
+        println!("forwarding to notifiers on: {}", &srv_config.outgoing);
+    }
 
     let mut poller = Poller::new();
     let mut events = Events::new();
@@ -110,6 +116,9 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
         .build()?;
 
     incoming_notif.send("SEIZE")?;
+    if let Some(true) = config.verbose {
+        println!("sent SEIZE: {}", &config.as_client.server.incoming);
+    }
 
     // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
     let (tx, interrupt_rx) = std::sync::mpsc::channel();
@@ -141,15 +150,19 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
                     notif.summary
                 };
 
+                if let Some(true) = config.verbose {
+                    println!("notifying: {} {}", summary, notif.body);
+                }
+
                 std::process::Command::new("/usr/bin/notify-send")
                     .args(&["-u", notif.urgency, "--", summary, notif.body])
                     .spawn()?
                     .wait()?;
-                }
+            }
         } else if let Ok(true) = interrupt_rx.recv() {
             incoming_notif.send("SEIZE")?;
             if let Some(true) = config.verbose {
-                println!("seizing!");
+                println!("sent SEIZE: {}", &config.as_client.server.incoming);
             }
         }
     }
