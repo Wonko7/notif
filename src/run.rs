@@ -86,9 +86,11 @@ pub fn route(config: Config) -> Result<(), Error> {
                     let sender_id = notif_fwd.routing_id().unwrap();
 
                     if let Some(current_notifier_id) = current_notifier_id {
-                        outgoing_notif.route(notif_fwd, current_notifier_id)
-                            .unwrap_or_else(|_e| incoming_notif.route("DROP", sender_id).unwrap()); // current_notifier might have fucked off.
-                        incoming_notif.route("ACK", sender_id)?;
+                        if let Ok(_) = outgoing_notif.route(notif_fwd, current_notifier_id) {
+                            incoming_notif.route("ACK", sender_id)?;
+                        } else {
+                            incoming_notif.route("DROP", sender_id)?;
+                        }// current_notifier might have fucked off.
                         if let Some(true) = config.verbose {
                             println!("Forward message to routing id {:?}", current_notifier_id);
                         }
