@@ -78,17 +78,17 @@ pub fn route(config: Config) -> Result<(), Error> {
             match event.id() {
                 PollId(0) => { // control message from notifier: SEIZE or YIELD
                     let notifier_req = outgoing_notif.recv_msg()?;
-		    if notifier_req.to_str()? == "SEIZE" {
-			let id              = notifier_req.routing_id().unwrap();
-			current_notifier_id = Some(id);
-			for msg in &queue { // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
-			    outgoing_notif.route(msg, id)?;
-			}
-			queue = Vec::new(); // better than removing items one by one?
-		    } else { // YIELD: queue messages in the meantime.
-			current_notifier_id = None;
-		    }
-		    outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
+                    if notifier_req.to_str()? == "SEIZE" {
+                        let id              = notifier_req.routing_id().unwrap();
+                        current_notifier_id = Some(id);
+                        for msg in &queue { // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
+                            outgoing_notif.route(msg, id)?;
+                        }
+                        queue = Vec::new(); // better than removing items one by one?
+                    } else { // YIELD: queue messages in the meantime.
+                        current_notifier_id = None;
+                    }
+                    outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
 
                     if let Some(true) = config.verbose {
                         println!("routing id {} msg: {}", current_notifier_id.unwrap().0, notifier_req.to_str()?);
