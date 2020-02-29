@@ -37,7 +37,9 @@ pub fn route(config: Config) -> Result<(), Error> {
     if let None = config.as_server {
         return Err(err_msg("missing as_server section in config"));
     }
+
     let mut current_notifier_id = None;
+    let mut queue               = Vec::new();
 
     let srv_config     = config.as_server.unwrap();
     let _auth_registry = srv_config.auth.build()?;
@@ -73,10 +75,13 @@ pub fn route(config: Config) -> Result<(), Error> {
         poller.poll(&mut events, Period::Infinite)?;
         for event in &events {
             match event.id() {
-                PollId(0) => { // SEIZE from notifier:
+                PollId(0) => { // SEIZE from notifier: || YIELD
                     let seize_req       = outgoing_notif.recv_msg()?; // we need prelude::*, why?
                     current_notifier_id = Some(seize_req.routing_id().unwrap());
                     outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
+		    for msg in &queue {
+			outgoing_notif.route(msg, current_notifier_id.unwrap())?;
+		    }
                     if let Some(true) = config.verbose {
                         println!("routing id {} seized with msg: {}", current_notifier_id.unwrap().0, seize_req.to_str()?);
                     }
@@ -88,16 +93,17 @@ pub fn route(config: Config) -> Result<(), Error> {
                     if let Some(current_notifier_id) = current_notifier_id {
                         if let Ok(_) = outgoing_notif.route(notif_fwd, current_notifier_id) {
                             incoming_notif.route("ACK", sender_id)?;
-                        } else {
+                        } else { // current_notifier might have fucked off.
                             incoming_notif.route("DROP", sender_id)?;
-                        }// current_notifier might have fucked off.
+                        }
                         if let Some(true) = config.verbose {
                             println!("Forward message to routing id {:?}", current_notifier_id);
                         }
                     } else {
-                        incoming_notif.route("DROP", sender_id)?;
+                        queue.push(notif_fwd);
+                        incoming_notif.route("QUEUED", sender_id)?;
                         if let Some(true) = config.verbose {
-                            println!("dropping, no notifier");
+                            println!("queueing, no notifier");
                         }
                     }
                 },
