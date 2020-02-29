@@ -8,6 +8,7 @@ use crate::notif::Notification;
 
 // FIXME: needs empirical data
 static TIMEOUT: Duration = Duration::from_secs(5);
+static QUEUE_SIZE: usize = 1000;
 
 pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
@@ -38,10 +39,6 @@ pub fn route(config: Config) -> Result<(), Error> {
         return Err(err_msg("missing as_server section in config"));
     }
 
-    let mut current_notifier_id = None;
-    let mut queue               = Vec::new();
-    //let max_queue  = 1000; Some(option)
-
     let srv_config     = config.as_server.unwrap();
     let _auth_registry = srv_config.auth.build()?;
     let server_creds   = CurveServerCreds::new(srv_config.secret);
@@ -61,6 +58,10 @@ pub fn route(config: Config) -> Result<(), Error> {
         .recv_timeout(TIMEOUT)
         .send_timeout(TIMEOUT)
         .build()?;
+
+    let mut current_notifier_id = None;
+    let mut queue               = Vec::new();
+    let queue_size              = srv_config.queue_size.unwrap_or(QUEUE_SIZE);
 
     if let Some(true) = config.verbose {
         println!("listening for incoming notifications on: {}", &srv_config.incoming);
@@ -108,6 +109,7 @@ pub fn route(config: Config) -> Result<(), Error> {
                             println!("Forward message to routing id {:?}", current_notifier_id);
                         }
                     } else {
+                        // TODO: queue_size
                         queue.push(notif_fwd);
                         incoming_notif.route("QUEUED", sender_id)?;
                         if let Some(true) = config.verbose {

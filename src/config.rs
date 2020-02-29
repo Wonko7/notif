@@ -6,18 +6,20 @@ use libzmq::{auth::{CurveCert, CurvePublicKey, CurveSecretKey}, TcpAddr, config:
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct SrvConfig {
-    pub incoming: TcpAddr,
-    pub outgoing: TcpAddr,
-    pub secret:   CurveSecretKey,
-    pub auth:     AuthConfig,
+    pub incoming:   TcpAddr,
+    pub outgoing:   TcpAddr,
+    pub secret:     CurveSecretKey,
+    pub auth:       AuthConfig,
+    pub queue_size: Option<usize>,
 }
 impl SrvConfig {
     fn new(incoming: &TcpAddr, outgoing: &TcpAddr, secret: &CurveSecretKey, auth: &AuthConfig) -> SrvConfig {
         SrvConfig { // not pretty, but only used to make topo config files.
-            incoming: incoming.clone(),
-            outgoing: outgoing.clone(),
-            secret:   secret.clone(),
-            auth:     auth.clone(),
+            incoming:   incoming.clone(),
+            outgoing:   outgoing.clone(),
+            secret:     secret.clone(),
+            auth:       auth.clone(),
+            queue_size: None,
         }
     }
 }
