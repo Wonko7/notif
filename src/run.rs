@@ -1,6 +1,6 @@
 use failure::{Error, err_msg, format_err};
 use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
-use signal_hook::{iterator::Signals, SIGHUP};
+use signal_hook::{iterator::Signals, SIGHUP, SIGUSR1, SIGUSR2};
 use std::time::Duration;
 
 use crate::config::Config;
@@ -40,6 +40,7 @@ pub fn route(config: Config) -> Result<(), Error> {
 
     let mut current_notifier_id = None;
     let mut queue               = Vec::new();
+    //let max_queue  = 1000; Some(option)
 
     let srv_config     = config.as_server.unwrap();
     let _auth_registry = srv_config.auth.build()?;
@@ -75,15 +76,22 @@ pub fn route(config: Config) -> Result<(), Error> {
         poller.poll(&mut events, Period::Infinite)?;
         for event in &events {
             match event.id() {
-                PollId(0) => { // SEIZE from notifier: || YIELD
-                    let seize_req       = outgoing_notif.recv_msg()?; // we need prelude::*, why?
-                    current_notifier_id = Some(seize_req.routing_id().unwrap());
-                    outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
-		    for msg in &queue {
-			outgoing_notif.route(msg, current_notifier_id.unwrap())?;
+                PollId(0) => { // control message from notifier: SEIZE or YIELD
+                    let notifier_req = outgoing_notif.recv_msg()?;
+		    if notifier_req.to_str()? == "SEIZE" {
+			let id              = notifier_req.routing_id().unwrap();
+			current_notifier_id = Some(id);
+			for msg in &queue { // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
+			    outgoing_notif.route(msg, id)?;
+			}
+			queue = Vec::new(); // better than removing items one by one?
+		    } else { // YIELD: queue messages in the meantime.
+			current_notifier_id = None;
 		    }
+		    outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
+
                     if let Some(true) = config.verbose {
-                        println!("routing id {} seized with msg: {}", current_notifier_id.unwrap().0, seize_req.to_str()?);
+                        println!("routing id {} msg: {}", current_notifier_id.unwrap().0, notifier_req.to_str()?);
                     }
                 },
                 PollId(1) => { // Forward to notifier:
@@ -130,10 +138,14 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
 
     // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
     let (tx, interrupt_rx) = std::sync::mpsc::channel();
-    let signals            = Signals::new(&[SIGHUP])?;
+    let signals            = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2])?;
     std::thread::spawn(move || {
-        for _signal in signals.forever() {
-            tx.send(true).unwrap();
+        for signal in signals.forever() {
+	    match signal {
+		SIGUSR1          => tx.send("YIELD").unwrap(),
+		SIGHUP | SIGUSR2 => tx.send("SEIZE").unwrap(),
+		_                => unreachable!() // since other signals aren't registered.
+	    }
         }
     });
 
@@ -167,10 +179,10 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
                     .spawn()?
                     .wait()?;
             }
-        } else if let Ok(true) = interrupt_rx.recv() {
-            incoming_notif.send("SEIZE")?;
+        } else if let Ok(interrupt_message) = interrupt_rx.recv() {
+            incoming_notif.send(interrupt_message)?;
             if let Some(true) = config.verbose {
-                println!("sent SEIZE: {}", &config.as_client.server.incoming);
+                println!("sent {}: {}", interrupt_message, &config.as_client.server.incoming);
             }
         }
     }
