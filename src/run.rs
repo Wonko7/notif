@@ -34,14 +34,39 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     Ok(())
 }
 
+fn notifier_change_request(verbose: Option<bool>, outgoing_notif: &libzmq::Server, queue: &mut VecDeque<libzmq::Msg>) -> Result<Option<libzmq::RoutingId>, Error>
+{
+    let notifier_req     = outgoing_notif.recv_msg()?;
+    let notifier_req_str = notifier_req.to_str()?;
+    let id               = notifier_req.routing_id().unwrap();
+    let current_notifier_id;
+
+    if notifier_req_str == "SEIZE" {
+        current_notifier_id = Some(id);
+        for msg in queue.iter() { // FIXME diff between queue & queue.iter()? // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
+            outgoing_notif.route(msg, id)?;
+        }
+        queue.clear();
+    } else { // YIELD: queue messages in the meantime.
+        current_notifier_id = None;
+    }
+    outgoing_notif.route("ACK", id)?;
+
+    if let Some(true) = verbose {
+        println!("routing id {} request: {}", id.0, notifier_req_str);
+    }
+
+    Ok(current_notifier_id)
+}
+
 pub fn route(config: Config) -> Result<(), Error> {
     if let None = config.as_server {
         return Err(err_msg("missing as_server section in config"));
     }
 
     let srv_config     = config.as_server.unwrap();
-    let _auth_registry = srv_config.auth.build()?;
-    let server_creds   = CurveServerCreds::new(srv_config.secret);
+    let _auth_registry = &srv_config.auth.build()?;
+    let server_creds   = CurveServerCreds::new(&srv_config.secret);
     let heartbeat      = Heartbeat::new(TIMEOUT)
         .add_timeout(2 * TIMEOUT);
     let incoming_notif = ServerBuilder::new()
@@ -78,23 +103,8 @@ pub fn route(config: Config) -> Result<(), Error> {
         for event in &events {
             match event.id() {
                 PollId(0) => { // control message from notifier: SEIZE or YIELD
-                    let notifier_req     = outgoing_notif.recv_msg()?;
-                    let notifier_req_str = notifier_req.to_str()?;
-                    let id               = notifier_req.routing_id().unwrap();
-
-                    if notifier_req_str == "SEIZE" {
-                        current_notifier_id = Some(id);
-                        for msg in &queue { // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
-                            outgoing_notif.route(msg, id)?;
-                        }
-                        queue.clear();
-                    } else { // YIELD: queue messages in the meantime.
-                        current_notifier_id = None;
-                    }
-                    outgoing_notif.route("ACK", id)?;
-
-                    if let Some(true) = config.verbose {
-                        println!("routing id {} request: {}", id.0, notifier_req_str);
+                    if let Ok(id) = notifier_change_request(config.verbose, &outgoing_notif, &mut queue) {
+                        current_notifier_id = id;
                     }
                 },
                 PollId(1) => { // notification message to forward to notifier:
@@ -102,6 +112,7 @@ pub fn route(config: Config) -> Result<(), Error> {
                     let sender_id = notif_fwd.routing_id().unwrap();
 
                     if let Some(notifier_id) = current_notifier_id {
+                        println!("DEBUG1"); // FIXME
                         if let Ok(_) = outgoing_notif.route(notif_fwd, notifier_id) {
                             incoming_notif.route("ACK", sender_id)?;
                         } else { // current_notifier might have fucked off.
@@ -113,6 +124,7 @@ pub fn route(config: Config) -> Result<(), Error> {
                             println!("Forward message to routing id {:?}", notifier_id);
                         }
                     } else { // queue!
+                        println!("DEBUG2"); // FIXME
                         if let Some(true) = config.verbose {
                             println!("no notifier: queueing");
                         }
