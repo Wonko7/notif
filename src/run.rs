@@ -217,8 +217,8 @@ fn notif_fwd( // FIXME: arguments should be cleaner, looks like what I'd do in C
     verbose:             Option<bool>,
     ) -> Result<Option<libzmq::RoutingId>, Error>
 {
-    let notif_fwd       = incoming_notif.recv_msg()?;
-    let sender_id       = notif_fwd.routing_id().unwrap();
+    let notif_fwd = incoming_notif.recv_msg()?;
+    let sender_id = notif_fwd.routing_id().unwrap();
 
     if let Some(notifier_id) = current_notifier_id {
         if let Some(true) = verbose {
