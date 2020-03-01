@@ -1,4 +1,4 @@
-use failure::{Error, err_msg, format_err};
+use failure::{Error, err_msg};
 use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
 use signal_hook::{iterator::Signals, SIGHUP, SIGUSR1, SIGUSR2};
 use std::{collections::VecDeque, time::Duration};
@@ -34,43 +34,71 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     Ok(())
 }
 
-fn notifier_change_request(verbose: Option<bool>, outgoing_notif: &libzmq::Server, queue: &mut VecDeque<libzmq::Msg>) -> Result<Option<libzmq::RoutingId>, Error>
-{
-    let notifier_req     = outgoing_notif.recv_msg()?;
-    let notifier_req_str = notifier_req.to_str()?;
-    let id               = notifier_req.routing_id().unwrap();
-    let current_notifier_id;
+pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
+    let client_creds   = CurveClientCreds::new(config.as_client.server.public)
+        .add_cert(config.as_client.cert);
+    let incoming_notif = ClientBuilder::new()
+        .connect(config.as_client.server.outgoing)
+        .recv_timeout(TIMEOUT)
+        .send_timeout(TIMEOUT)
+        .mechanism(client_creds)
+        .build()?;
 
-    if notifier_req_str == "SEIZE" {
-        current_notifier_id = Some(id);
-        for msg in queue.iter() { // FIXME diff between queue & queue.iter()? // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
-            outgoing_notif.route(msg, id)?;
+    incoming_notif.send("SEIZE")?;
+    if let Some(true) = config.verbose {
+        println!("sent SEIZE: {}", &config.as_client.server.incoming);
+    }
+
+    // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
+    let (tx, interrupt_rx) = std::sync::mpsc::channel();
+    let signals            = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2])?;
+    std::thread::spawn(move || {
+        for signal in signals.forever() {
+            match signal {
+                SIGUSR1          => tx.send("YIELD").unwrap(),
+                SIGHUP | SIGUSR2 => tx.send("SEIZE").unwrap(),
+                _                => unreachable!() // since other signals aren't registered.
+            }
         }
-        queue.clear();
-    } else { // YIELD: queue messages in the meantime.
-        current_notifier_id = None;
-    }
-    outgoing_notif.route("ACK", id)?;
+    });
 
-    if let Some(true) = verbose {
-        println!("routing id {} request: {}", id.0, notifier_req_str);
-    }
+    let mut poller = Poller::new();
+    let mut events = Events::new();
+    poller.add(&incoming_notif, PollId(0), READABLE)?;
 
-    Ok(current_notifier_id)
-}
+    loop {
+        if let Ok(_) = poller.poll(&mut events, Period::Infinite) {
+            for _event in &events {
+                let msg = incoming_notif.recv_msg()?;
+                if msg.len() == 3 && msg.to_str()? == "ACK" {
+                    continue;
+                }
+                let notif: Notification = bincode::deserialize(&msg.as_bytes())?;
 
-fn notif_queue(notif_msg: libzmq::Msg, queue: &mut VecDeque<libzmq::Msg>, queue_size: usize, verbose: Option<bool>)
-{
-    if let Some(true) = verbose {
-        println!("no notifier: queueing");
-    }
-    if queue.len() == queue_size {
-        queue.pop_front();
-        if let Some(true) = verbose {
-            println!("dropping oldest");
+                let keep_in_scope: String;
+                let summary = if notif.hostname != hostname {
+                    keep_in_scope = format!("@{}: {}", notif.hostname, notif.summary);
+                    keep_in_scope.as_str()
+                } else {
+                    notif.summary
+                };
+
+                if let Some(true) = config.verbose {
+                    println!("notifying: {} {}", summary, notif.body);
+                }
+
+                std::process::Command::new("/usr/bin/notify-send")
+                    .args(&["-u", notif.urgency, "--", summary, notif.body])
+                    .spawn()?
+                    .wait()?;
+                }
+        } else if let Ok(interrupt_message) = interrupt_rx.recv() {
+            incoming_notif.send(interrupt_message)?;
+            if let Some(true) = config.verbose {
+                println!("sent {}: {}", interrupt_message, &config.as_client.server.incoming);
+            }
         }
     }
-    queue.push_back(notif_msg);
 }
 
 pub fn route(config: Config) -> Result<(), Error> {
@@ -117,29 +145,13 @@ pub fn route(config: Config) -> Result<(), Error> {
         for event in &events {
             match event.id() {
                 PollId(0) => { // control message from notifier: SEIZE or YIELD
-                    if let Ok(id) = notifier_change_request(config.verbose, &outgoing_notif, &mut queue) {
+                    if let Ok(id) = notifier_change_request(&outgoing_notif, &mut queue, config.verbose) {
                         current_notifier_id = id;
                     }
                 },
                 PollId(1) => { // notification message to forward to notifier:
-                    let notif_fwd = incoming_notif.recv_msg()?;
-                    let sender_id = notif_fwd.routing_id().unwrap();
-
-                    if let Some(notifier_id) = current_notifier_id {
-                        if let Ok(_) = outgoing_notif.route(&notif_fwd, notifier_id) {
-                            incoming_notif.route("ACK", sender_id)?;
-                        } else { // current_notifier might have fucked off.
-                            // FIXME also queue this.
-                            current_notifier_id = None;
-                            notif_queue(notif_fwd, &mut queue, queue_size, config.verbose);
-                            incoming_notif.route("QUEUED", sender_id)?;
-                        }
-                        if let Some(true) = config.verbose {
-                            println!("Forward message to routing id {:?}", notifier_id);
-                        }
-                    } else { // queue!
-                        notif_queue(notif_fwd, &mut queue, queue_size, config.verbose);
-                        incoming_notif.route("QUEUED", sender_id)?;
+                    if let Ok(id) = notif_fwd(&incoming_notif, &outgoing_notif, current_notifier_id, &mut queue, queue_size, config.verbose) {
+                        current_notifier_id = id;
                     }
                 },
                 _ => unreachable!(),
@@ -148,69 +160,83 @@ pub fn route(config: Config) -> Result<(), Error> {
     }
 }
 
-pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
-    let client_creds   = CurveClientCreds::new(config.as_client.server.public)
-        .add_cert(config.as_client.cert);
-    let incoming_notif = ClientBuilder::new()
-        .connect(config.as_client.server.outgoing)
-        .recv_timeout(TIMEOUT)
-        .send_timeout(TIMEOUT)
-        .mechanism(client_creds)
-        .build()?;
+fn notifier_change_request(
+    outgoing_notif: &libzmq::Server,
+    queue:          &mut VecDeque<libzmq::Msg>,
+    verbose:        Option<bool>,
+    ) -> Result<Option<libzmq::RoutingId>, Error>
+{
+    let notifier_req     = outgoing_notif.recv_msg()?;
+    let notifier_req_str = notifier_req.to_str()?;
+    let id               = notifier_req.routing_id().unwrap();
+    let current_notifier_id;
 
-    incoming_notif.send("SEIZE")?;
-    if let Some(true) = config.verbose {
-        println!("sent SEIZE: {}", &config.as_client.server.incoming);
+    if notifier_req_str == "SEIZE" {
+        current_notifier_id = Some(id);
+        for msg in queue.iter() { // FIXME diff between queue & queue.iter()? // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
+            outgoing_notif.route(msg, id)?;
+        }
+        queue.clear();
+    } else { // YIELD: queue messages in the meantime.
+        current_notifier_id = None;
+    }
+    outgoing_notif.route("ACK", id)?;
+
+    if let Some(true) = verbose {
+        println!("routing id {} request: {}", id.0, notifier_req_str);
     }
 
-    // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
-    let (tx, interrupt_rx) = std::sync::mpsc::channel();
-    let signals            = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2])?;
-    std::thread::spawn(move || {
-        for signal in signals.forever() {
-	    match signal {
-		SIGUSR1          => tx.send("YIELD").unwrap(),
-		SIGHUP | SIGUSR2 => tx.send("SEIZE").unwrap(),
-		_                => unreachable!() // since other signals aren't registered.
-	    }
+    Ok(current_notifier_id)
+}
+
+fn notif_queue(
+    notif_msg:  libzmq::Msg,
+    queue:      &mut VecDeque<libzmq::Msg>,
+    queue_size: usize,
+    verbose:    Option<bool>
+    )
+{
+    if let Some(true) = verbose {
+        println!("no notifier: queueing");
+    }
+    if queue.len() == queue_size {
+        queue.pop_front();
+        if let Some(true) = verbose {
+            println!("dropping oldest");
         }
-    });
+    }
+    queue.push_back(notif_msg);
+}
 
-    let mut poller = Poller::new();
-    let mut events = Events::new();
-    poller.add(&incoming_notif, PollId(0), READABLE)?;
+fn notif_fwd( // FIXME: arguments should be cleaner, looks like what I'd do in C.
+    incoming_notif:      &libzmq::Server,
+    outgoing_notif:      &libzmq::Server,
+    current_notifier_id: Option<libzmq::RoutingId>,
+    queue:               &mut VecDeque<libzmq::Msg>,
+    queue_size:          usize,
+    verbose:             Option<bool>,
+    ) -> Result<Option<libzmq::RoutingId>, Error>
+{
+    let notif_fwd       = incoming_notif.recv_msg()?;
+    let sender_id       = notif_fwd.routing_id().unwrap();
 
-    loop {
-        if let Ok(_) = poller.poll(&mut events, Period::Infinite) {
-            for _event in &events {
-                let msg = incoming_notif.recv_msg()?;
-                if msg.len() == 3 && msg.to_str()? == "ACK" {
-                    continue;
-                }
-                let notif: Notification = bincode::deserialize(&msg.as_bytes())?;
-
-                let keep_in_scope: String;
-                let summary = if notif.hostname != hostname {
-                    keep_in_scope = format!("@{}: {}", notif.hostname, notif.summary);
-                    keep_in_scope.as_str()
-                } else {
-                    notif.summary
-                };
-
-                if let Some(true) = config.verbose {
-                    println!("notifying: {} {}", summary, notif.body);
-                }
-
-                std::process::Command::new("/usr/bin/notify-send")
-                    .args(&["-u", notif.urgency, "--", summary, notif.body])
-                    .spawn()?
-                    .wait()?;
-            }
-        } else if let Ok(interrupt_message) = interrupt_rx.recv() {
-            incoming_notif.send(interrupt_message)?;
-            if let Some(true) = config.verbose {
-                println!("sent {}: {}", interrupt_message, &config.as_client.server.incoming);
-            }
+    if let Some(notifier_id) = current_notifier_id {
+        if let Some(true) = verbose {
+            println!("Forward message to routing id {:?}", notifier_id);
         }
+
+        if let Ok(_) = outgoing_notif.route(&notif_fwd, notifier_id) {
+            incoming_notif.route("ACK", sender_id)?;
+            Ok(current_notifier_id)
+        } else { // current_notifier might have fucked off.
+            // FIXME also queue this.
+            notif_queue(notif_fwd, queue, queue_size, verbose);
+            incoming_notif.route("QUEUED", sender_id)?;
+            Ok(None)
+        }
+    } else { // queue!
+        notif_queue(notif_fwd, queue, queue_size, verbose);
+        incoming_notif.route("QUEUED", sender_id)?;
+        Ok(current_notifier_id)
     }
 }
