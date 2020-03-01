@@ -59,6 +59,20 @@ fn notifier_change_request(verbose: Option<bool>, outgoing_notif: &libzmq::Serve
     Ok(current_notifier_id)
 }
 
+fn notif_queue(notif_msg: libzmq::Msg, queue: &mut VecDeque<libzmq::Msg>, queue_size: usize, verbose: Option<bool>)
+{
+    if let Some(true) = verbose {
+        println!("no notifier: queueing");
+    }
+    if queue.len() == queue_size {
+        queue.pop_front();
+        if let Some(true) = verbose {
+            println!("dropping oldest");
+        }
+    }
+    queue.push_back(notif_msg);
+}
+
 pub fn route(config: Config) -> Result<(), Error> {
     if let None = config.as_server {
         return Err(err_msg("missing as_server section in config"));
@@ -112,29 +126,19 @@ pub fn route(config: Config) -> Result<(), Error> {
                     let sender_id = notif_fwd.routing_id().unwrap();
 
                     if let Some(notifier_id) = current_notifier_id {
-                        println!("DEBUG1"); // FIXME
-                        if let Ok(_) = outgoing_notif.route(notif_fwd, notifier_id) {
+                        if let Ok(_) = outgoing_notif.route(&notif_fwd, notifier_id) {
                             incoming_notif.route("ACK", sender_id)?;
                         } else { // current_notifier might have fucked off.
                             // FIXME also queue this.
                             current_notifier_id = None;
-                            incoming_notif.route("DROP", sender_id)?;
+                            notif_queue(notif_fwd, &mut queue, queue_size, config.verbose);
+                            incoming_notif.route("QUEUED", sender_id)?;
                         }
                         if let Some(true) = config.verbose {
                             println!("Forward message to routing id {:?}", notifier_id);
                         }
                     } else { // queue!
-                        println!("DEBUG2"); // FIXME
-                        if let Some(true) = config.verbose {
-                            println!("no notifier: queueing");
-                        }
-                        if queue.len() == queue_size {
-                            queue.pop_front();
-                            if let Some(true) = config.verbose {
-                                println!("dropping oldest");
-                            }
-                        }
-                        queue.push_back(notif_fwd);
+                        notif_queue(notif_fwd, &mut queue, queue_size, config.verbose);
                         incoming_notif.route("QUEUED", sender_id)?;
                     }
                 },
