@@ -1,14 +1,14 @@
 use failure::{Error, err_msg, format_err};
 use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
 use signal_hook::{iterator::Signals, SIGHUP, SIGUSR1, SIGUSR2};
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 
 use crate::config::Config;
 use crate::notif::Notification;
 
 // FIXME: needs empirical data
 static TIMEOUT: Duration = Duration::from_secs(5);
-static QUEUE_SIZE: usize = 1000;
+static QUEUE_SIZE: usize = 3;
 
 pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
@@ -27,11 +27,11 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     outgoing_notif.send(bincode::serialize(&notif).unwrap())?;
     let status = outgoing_notif.recv_msg()?; // wait for ack.
     let msg    = status.to_str()?;
-    if msg == "ACK" {
-        Ok(())
-    } else {
-        Err(format_err!("received: {}", msg))
+
+    if let Some(true) = config.verbose {
+        println!("received: {}", msg);
     }
+    Ok(())
 }
 
 pub fn route(config: Config) -> Result<(), Error> {
@@ -60,7 +60,7 @@ pub fn route(config: Config) -> Result<(), Error> {
         .build()?;
 
     let mut current_notifier_id = None;
-    let mut queue               = Vec::new();
+    let mut queue               = VecDeque::new();
     let queue_size              = srv_config.queue_size.unwrap_or(QUEUE_SIZE);
 
     if let Some(true) = config.verbose {
@@ -78,43 +78,52 @@ pub fn route(config: Config) -> Result<(), Error> {
         for event in &events {
             match event.id() {
                 PollId(0) => { // control message from notifier: SEIZE or YIELD
-                    let notifier_req = outgoing_notif.recv_msg()?;
-                    if notifier_req.to_str()? == "SEIZE" {
-                        let id              = notifier_req.routing_id().unwrap();
+                    let notifier_req     = outgoing_notif.recv_msg()?;
+                    let notifier_req_str = notifier_req.to_str()?;
+                    let id               = notifier_req.routing_id().unwrap();
+
+                    if notifier_req_str == "SEIZE" {
                         current_notifier_id = Some(id);
                         for msg in &queue { // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
                             outgoing_notif.route(msg, id)?;
                         }
-                        queue = Vec::new(); // better than removing items one by one?
+                        queue.clear();
                     } else { // YIELD: queue messages in the meantime.
                         current_notifier_id = None;
                     }
-                    outgoing_notif.route("ACK", current_notifier_id.unwrap())?;
+                    outgoing_notif.route("ACK", id)?;
 
                     if let Some(true) = config.verbose {
-                        println!("routing id {} msg: {}", current_notifier_id.unwrap().0, notifier_req.to_str()?);
+                        println!("routing id {} request: {}", id.0, notifier_req_str);
                     }
                 },
-                PollId(1) => { // Forward to notifier:
+                PollId(1) => { // notification message to forward to notifier:
                     let notif_fwd = incoming_notif.recv_msg()?;
                     let sender_id = notif_fwd.routing_id().unwrap();
 
-                    if let Some(current_notifier_id) = current_notifier_id {
-                        if let Ok(_) = outgoing_notif.route(notif_fwd, current_notifier_id) {
+                    if let Some(notifier_id) = current_notifier_id {
+                        if let Ok(_) = outgoing_notif.route(notif_fwd, notifier_id) {
                             incoming_notif.route("ACK", sender_id)?;
                         } else { // current_notifier might have fucked off.
+                            // FIXME also queue this.
+                            current_notifier_id = None;
                             incoming_notif.route("DROP", sender_id)?;
                         }
                         if let Some(true) = config.verbose {
-                            println!("Forward message to routing id {:?}", current_notifier_id);
+                            println!("Forward message to routing id {:?}", notifier_id);
                         }
-                    } else {
-                        // TODO: queue_size
-                        queue.push(notif_fwd);
-                        incoming_notif.route("QUEUED", sender_id)?;
+                    } else { // queue!
                         if let Some(true) = config.verbose {
-                            println!("queueing, no notifier");
+                            println!("no notifier: queueing");
                         }
+                        if queue.len() == queue_size {
+                            queue.pop_front();
+                            if let Some(true) = config.verbose {
+                                println!("dropping oldest");
+                            }
+                        }
+                        queue.push_back(notif_fwd);
+                        incoming_notif.route("QUEUED", sender_id)?;
                     }
                 },
                 _ => unreachable!(),
