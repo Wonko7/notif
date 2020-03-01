@@ -1,6 +1,6 @@
 [package]
 name        = "notif"
-version     = "0.0.7"
+version     = "0.0.9"
 authors     = ["William <william@undefined.re>"]
 edition     = "2018"
 license     = "GPL-2.0"
