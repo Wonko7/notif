@@ -8,7 +8,7 @@ use crate::notif::Notification;
 
 // FIXME: needs empirical data
 static TIMEOUT: Duration = Duration::from_secs(5);
-static QUEUE_SIZE: usize = 3;
+static QUEUE_SIZE: usize = 1000;
 
 pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
