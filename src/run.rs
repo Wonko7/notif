@@ -10,6 +10,7 @@ use crate::notif::Notification;
 static TIMEOUT: Duration = Duration::from_secs(5);
 static QUEUE_SIZE: usize = 1000;
 
+/// sender endpoint: send a Notification message, wait a bit for an ACK.
 pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     let verbose        = config.verbose.unwrap_or(false);
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
@@ -35,6 +36,9 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     Ok(())
 }
 
+/// Notifier endpoint: receives Notification messages to be displayed.  Has the lifetime of an X
+/// session, can be made to yield or seize current notifier status with SIGUSR1 & SIGUSR2. Yield
+/// when X is locked, sieze when unlocked.
 pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
     let verbose        = config.verbose.unwrap_or(false);
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
@@ -103,6 +107,9 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
     }
 }
 
+/// Route messages from senders to current notifier.  Only one notifier is active at the same time,
+/// the latest one to have sent a SEIZE message. If no notifiers are active queue queue_size
+/// messages before dropping the oldest notifications.
 pub fn route(config: Config) -> Result<(), Error> {
     if let None = config.as_server {
         return Err(err_msg("missing as_server section in config"));
