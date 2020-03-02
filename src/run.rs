@@ -11,6 +11,7 @@ static TIMEOUT: Duration = Duration::from_secs(5);
 static QUEUE_SIZE: usize = 1000;
 
 pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
+    let verbose        = config.verbose.unwrap_or(false);
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
         .add_cert(config.as_client.cert);
     let outgoing_notif = ClientBuilder::new()
@@ -20,7 +21,7 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
         .mechanism(client_creds)
         .build()?;
 
-    if let Some(true) = config.verbose {
+    if verbose {
         println!("sending to: {}", &config.as_client.server.incoming);
     }
 
@@ -28,13 +29,14 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     let status = outgoing_notif.recv_msg()?; // wait for ack.
     let msg    = status.to_str()?;
 
-    if let Some(true) = config.verbose {
+    if verbose {
         println!("received: {}", msg);
     }
     Ok(())
 }
 
 pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
+    let verbose        = config.verbose.unwrap_or(false);
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
         .add_cert(config.as_client.cert);
     let incoming_notif = ClientBuilder::new()
@@ -45,7 +47,7 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
         .build()?;
 
     incoming_notif.send("SEIZE")?;
-    if let Some(true) = config.verbose {
+    if verbose {
         println!("sent SEIZE: {}", &config.as_client.server.incoming);
     }
 
@@ -83,7 +85,7 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
                     notif.summary
                 };
 
-                if let Some(true) = config.verbose {
+                if verbose {
                     println!("notifying: {} {}", summary, notif.body);
                 }
 
@@ -94,7 +96,7 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
                 }
         } else if let Ok(interrupt_message) = interrupt_rx.recv() {
             incoming_notif.send(interrupt_message)?;
-            if let Some(true) = config.verbose {
+            if verbose {
                 println!("sent {}: {}", interrupt_message, &config.as_client.server.incoming);
             }
         }
@@ -105,7 +107,7 @@ pub fn route(config: Config) -> Result<(), Error> {
     if let None = config.as_server {
         return Err(err_msg("missing as_server section in config"));
     }
-
+    let verbose        = config.verbose.unwrap_or(false);
     let srv_config     = config.as_server.unwrap();
     let _auth_registry = &srv_config.auth.build()?;
     let server_creds   = CurveServerCreds::new(&srv_config.secret);
@@ -130,7 +132,7 @@ pub fn route(config: Config) -> Result<(), Error> {
     let mut queue               = VecDeque::new();
     let queue_size              = srv_config.queue_size.unwrap_or(QUEUE_SIZE);
 
-    if let Some(true) = config.verbose {
+    if verbose {
         println!("listening for incoming notifications on: {}", &srv_config.incoming);
         println!("forwarding to notifiers on: {}", &srv_config.outgoing);
     }
@@ -144,16 +146,14 @@ pub fn route(config: Config) -> Result<(), Error> {
         poller.poll(&mut events, Period::Infinite)?;
         for event in &events {
             match event.id() {
-                PollId(0) => { // control message from notifier: SEIZE or YIELD
-                    if let Ok(id) = notifier_change_request(&outgoing_notif, &mut queue, config.verbose) {
+                PollId(0) => // control message from notifier: SEIZE or YIELD
+                    if let Ok(id) = notifier_change_request(&outgoing_notif, &mut queue, verbose) {
                         current_notifier_id = id;
-                    }
-                },
-                PollId(1) => { // notification message to forward to notifier:
-                    if let Ok(id) = notif_fwd(&incoming_notif, &outgoing_notif, current_notifier_id, &mut queue, queue_size, config.verbose) {
+                    },
+                PollId(1) => // notification message to forward to notifier:
+                    if let Ok(id) = notif_fwd(&incoming_notif, &outgoing_notif, current_notifier_id, &mut queue, queue_size, verbose) {
                         current_notifier_id = id;
-                    }
-                },
+                    },
                 _ => unreachable!(),
             }
         }
@@ -163,9 +163,8 @@ pub fn route(config: Config) -> Result<(), Error> {
 fn notifier_change_request(
     outgoing_notif: &libzmq::Server,
     queue:          &mut VecDeque<libzmq::Msg>,
-    verbose:        Option<bool>,
-    ) -> Result<Option<libzmq::RoutingId>, Error>
-{
+    verbose:        bool,
+) -> Result<Option<libzmq::RoutingId>, Error> {
     let notifier_req     = outgoing_notif.recv_msg()?;
     let notifier_req_str = notifier_req.to_str()?;
     let id               = notifier_req.routing_id().unwrap();
@@ -182,7 +181,7 @@ fn notifier_change_request(
     }
     outgoing_notif.route("ACK", id)?;
 
-    if let Some(true) = verbose {
+    if verbose {
         println!("routing id {} request: {}", id.0, notifier_req_str);
     }
 
@@ -193,15 +192,14 @@ fn notif_queue(
     notif_msg:  libzmq::Msg,
     queue:      &mut VecDeque<libzmq::Msg>,
     queue_size: usize,
-    verbose:    Option<bool>
-    )
-{
-    if let Some(true) = verbose {
+    verbose:    bool,
+) {
+    if verbose {
         println!("no notifier: queueing");
     }
     if queue.len() == queue_size {
         queue.pop_front();
-        if let Some(true) = verbose {
+        if verbose {
             println!("dropping oldest");
         }
     }
@@ -214,22 +212,19 @@ fn notif_fwd( // FIXME: arguments should be cleaner, looks like what I'd do in C
     current_notifier_id: Option<libzmq::RoutingId>,
     queue:               &mut VecDeque<libzmq::Msg>,
     queue_size:          usize,
-    verbose:             Option<bool>,
-    ) -> Result<Option<libzmq::RoutingId>, Error>
-{
-    let notif_fwd       = incoming_notif.recv_msg()?;
-    let sender_id       = notif_fwd.routing_id().unwrap();
+    verbose:             bool,
+) -> Result<Option<libzmq::RoutingId>, Error> {
+    let notif_fwd = incoming_notif.recv_msg()?;
+    let sender_id = notif_fwd.routing_id().unwrap();
 
     if let Some(notifier_id) = current_notifier_id {
-        if let Some(true) = verbose {
-            println!("Forward message to routing id {:?}", notifier_id);
+        if verbose {
+            println!("Forwarding message to routing id {:?}", notifier_id);
         }
-
         if let Ok(_) = outgoing_notif.route(&notif_fwd, notifier_id) {
             incoming_notif.route("ACK", sender_id)?;
             Ok(current_notifier_id)
-        } else { // current_notifier might have fucked off.
-            // FIXME also queue this.
+        } else { // current_notifier has fucked off.
             notif_queue(notif_fwd, queue, queue_size, verbose);
             incoming_notif.route("QUEUED", sender_id)?;
             Ok(None)
