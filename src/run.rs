@@ -10,7 +10,7 @@ use crate::notif::Notification;
 static TIMEOUT: Duration = Duration::from_secs(5);
 static QUEUE_SIZE: usize = 1000;
 
-/// sender endpoint: send a Notification message, wait a bit for an ACK.
+/// Sender endpoint: send a Notification message, wait a bit for an ACK.
 pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
     let verbose        = config.verbose.unwrap_or(false);
     let client_creds   = CurveClientCreds::new(config.as_client.server.public)
@@ -55,7 +55,7 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
         println!("sent SEIZE: {}", &config.as_client.server.incoming);
     }
 
-    // catch SIGHUP to seize notifier. (use on unlock xscreensaver, etc):
+    // catch signals to seize/yield current notifier. (use on unlock xscreensaver, etc):
     let (tx, interrupt_rx) = std::sync::mpsc::channel();
     let signals            = Signals::new(&[SIGHUP, SIGUSR1, SIGUSR2])?;
     std::thread::spawn(move || {
@@ -76,12 +76,13 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
         if let Ok(_) = poller.poll(&mut events, Period::Infinite) {
             for _event in &events {
                 let msg = incoming_notif.recv_msg()?;
+                // router ACK'd our yield/seize request:
                 if msg.len() == 3 && msg.to_str()? == "ACK" {
                     continue;
                 }
-                let notif: Notification = bincode::deserialize(&msg.as_bytes())?;
 
                 let keep_in_scope: String;
+                let notif: Notification = bincode::deserialize(&msg.as_bytes())?;
                 let summary = if notif.hostname != hostname {
                     keep_in_scope = format!("@{}: {}", notif.hostname, notif.summary);
                     keep_in_scope.as_str()
@@ -158,7 +159,7 @@ pub fn route(config: Config) -> Result<(), Error> {
                         current_notifier_id = id;
                     },
                 PollId(1) => // notification message to forward to notifier:
-                    if let Ok(id) = notif_fwd(&incoming_notif, &outgoing_notif, current_notifier_id, &mut queue, queue_size, verbose) {
+                    if let Ok(id) = fwd_notification(&incoming_notif, &outgoing_notif, current_notifier_id, &mut queue, queue_size, verbose) {
                         current_notifier_id = id;
                     },
                 _ => unreachable!(),
@@ -167,6 +168,8 @@ pub fn route(config: Config) -> Result<(), Error> {
     }
 }
 
+/// process SEIZE/YIELD messages from notifiers, returns current notifier (None on yield).
+/// Used by router.
 fn notifier_change_request(
     outgoing_notif: &libzmq::Server,
     queue:          &mut VecDeque<libzmq::Msg>,
@@ -195,25 +198,10 @@ fn notifier_change_request(
     Ok(current_notifier_id)
 }
 
-fn notif_queue(
-    notif_msg:  libzmq::Msg,
-    queue:      &mut VecDeque<libzmq::Msg>,
-    queue_size: usize,
-    verbose:    bool,
-) {
-    if verbose {
-        println!("no notifier: queueing");
-    }
-    if queue.len() == queue_size {
-        queue.pop_front();
-        if verbose {
-            println!("dropping oldest");
-        }
-    }
-    queue.push_back(notif_msg);
-}
-
-fn notif_fwd( // FIXME: arguments should be cleaner, looks like what I'd do in C.
+/// Receive an incoming notification, send it to the current notifier.
+/// If None are active queue the notification.
+/// Used by router.
+fn fwd_notification( // FIXME: arguments could be cleaner, looks like what I'd do in C.
     incoming_notif:      &libzmq::Server,
     outgoing_notif:      &libzmq::Server,
     current_notifier_id: Option<libzmq::RoutingId>,
@@ -232,13 +220,31 @@ fn notif_fwd( // FIXME: arguments should be cleaner, looks like what I'd do in C
             incoming_notif.route("ACK", sender_id)?;
             Ok(current_notifier_id)
         } else { // current_notifier has fucked off.
-            notif_queue(notif_fwd, queue, queue_size, verbose);
+            queue_notification(notif_fwd, queue, queue_size, verbose);
             incoming_notif.route("QUEUED", sender_id)?;
             Ok(None)
         }
     } else { // queue!
-        notif_queue(notif_fwd, queue, queue_size, verbose);
+        queue_notification(notif_fwd, queue, queue_size, verbose);
         incoming_notif.route("QUEUED", sender_id)?;
         Ok(current_notifier_id)
     }
+}
+
+fn queue_notification(
+    notif_msg:  libzmq::Msg,
+    queue:      &mut VecDeque<libzmq::Msg>,
+    queue_size: usize,
+    verbose:    bool,
+) {
+    if verbose {
+        println!("no notifier: queueing");
+    }
+    if queue.len() == queue_size {
+        queue.pop_front();
+        if verbose {
+            println!("dropping oldest");
+        }
+    }
+    queue.push_back(notif_msg);
 }
