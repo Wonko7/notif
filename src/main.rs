@@ -72,7 +72,7 @@ fn main() -> Result<(), Error> {
 
     let config_file = matches.value_of("config");
     let config      = Config::new(config_file);
-    //let config      = Config::new(Some("./misc/notif-example-conf.yaml"));
+    // let config      = Config::new(Some("./misc/notif-example-conf.yaml"));
 
     match matches.subcommand() {
         ("send", Some(ms)) => run::send(

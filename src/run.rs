@@ -1,5 +1,4 @@
-use failure::{Error, err_msg};
-use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
+use failure::{bail, Error, err_msg, format_err};use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
 use signal_hook::{iterator::Signals, SIGHUP, SIGUSR1, SIGUSR2};
 use std::{collections::VecDeque, time::Duration};
 
@@ -22,18 +21,20 @@ pub fn send(config: Config, notif: Notification) -> Result<(), Error> {
         .mechanism(client_creds)
         .build()?;
 
-    if verbose {
-        println!("sending to: {}", &config.as_client.server.incoming);
-    }
-
     outgoing_notif.send(bincode::serialize(&notif).unwrap())?;
-    let status = outgoing_notif.recv_msg()?; // wait for ack.
-    let msg    = status.to_str()?;
-
     if verbose {
-        println!("received: {}", msg);
+        println!("sent notification to: {}", &config.as_client.server.incoming);
     }
-    Ok(())
+
+    if let Ok(status) = outgoing_notif.recv_msg() {
+        if verbose {
+            println!("received: {}", status.to_str()?);
+        }
+        Ok(())
+    } else {
+        spawn_local_notif(&notif)?;
+        Err(format_err!("timeout, no response from {}", &config.as_client.server.incoming))
+    }
 }
 
 /// Notifier endpoint: receives Notification messages to be displayed.  Has the lifetime of an X
@@ -82,23 +83,17 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
                 }
 
                 let keep_in_scope: String;
-                let notif: Notification = bincode::deserialize(&msg.as_bytes())?;
-                let summary = if notif.hostname != hostname {
+                let mut notif: Notification = bincode::deserialize(&msg.as_bytes())?;
+                if notif.hostname != hostname {
                     keep_in_scope = format!("@{}: {}", notif.hostname, notif.summary);
-                    keep_in_scope.as_str()
-                } else {
-                    notif.summary
+                    notif.summary = keep_in_scope.as_str()
                 };
+                spawn_local_notif(&notif)?;
 
                 if verbose {
-                    println!("notifying: {} {}", summary, notif.body);
+                    println!("notifying: {} {}", notif.summary, notif.body);
                 }
-
-                std::process::Command::new("/usr/bin/notify-send")
-                    .args(&["-u", notif.urgency, "--", summary, notif.body])
-                    .spawn()?
-                    .wait()?;
-                }
+            }
         } else if let Ok(interrupt_message) = interrupt_rx.recv() {
             incoming_notif.send(interrupt_message)?;
             if verbose {
@@ -247,4 +242,12 @@ fn queue_notification(
         }
     }
     queue.push_back(notif_msg);
+}
+
+fn spawn_local_notif(notif: &Notification) -> Result<(), Error> {
+    std::process::Command::new("notify-send")
+        .args(&["-u", notif.urgency, "--", notif.summary, notif.body])
+        .spawn()?
+        .wait()?;
+    Ok(())
 }
