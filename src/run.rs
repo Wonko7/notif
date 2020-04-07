@@ -155,7 +155,7 @@ pub fn route(config: Config) -> Result<(), Error> {
         for event in &events {
             match event.id() {
                 PollId(0) => // control message from notifier: SEIZE or YIELD
-                    if let Ok(id) = notifier_change_request(&outgoing_notif, &mut queue, verbose) {
+                    if let Ok(id) = notifier_change_request(&outgoing_notif, current_notifier_id, &mut queue, verbose) {
                         current_notifier_id = id;
                     },
                 PollId(1) => // notification message to forward to notifier:
@@ -171,31 +171,33 @@ pub fn route(config: Config) -> Result<(), Error> {
 /// process SEIZE/YIELD messages from notifiers, returns current notifier (None on yield).
 /// Used by router.
 fn notifier_change_request(
-    outgoing_notif: &libzmq::Server,
-    queue:          &mut VecDeque<libzmq::Msg>,
-    verbose:        bool,
+    outgoing_notif:      &libzmq::Server,
+    current_notifier_id: Option<libzmq::RoutingId>,
+    queue:               &mut VecDeque<libzmq::Msg>,
+    verbose:             bool,
 ) -> Result<Option<libzmq::RoutingId>, Error> {
-    let notifier_req     = outgoing_notif.recv_msg()?;
-    let notifier_req_str = notifier_req.to_str()?;
-    let id               = notifier_req.routing_id().unwrap();
-    let current_notifier_id;
+    let notifier_req        = outgoing_notif.recv_msg()?;
+    let notifier_req_str    = notifier_req.to_str()?;
+    let id                  = notifier_req.routing_id().unwrap();
+    let mut new_notifier_id = current_notifier_id;
 
     if notifier_req_str == "SEIZE" {
-        current_notifier_id = Some(id);
+        new_notifier_id = Some(id);
         for msg in queue.iter() { // FIXME diff between queue & queue.iter()? // queue.iter().map(|msg| outgoing_notif.route(msg, id)).collect();
             outgoing_notif.route(msg, id)?;
         }
         queue.clear();
-    } else { // YIELD: queue messages in the meantime.
-        current_notifier_id = None;
+    } else if Some(id) == current_notifier_id { // YIELD: queue messages in the meantime, and only YIELD if notifier was the current notifier.
+        new_notifier_id = None;
     }
+
     outgoing_notif.route("ACK", id)?;
 
     if verbose {
-        println!("routing id {} request: {}", id.0, notifier_req_str);
+        println!("routing id {} request {}", id.0, notifier_req_str);
     }
 
-    Ok(current_notifier_id)
+    Ok(new_notifier_id)
 }
 
 /// Receive an incoming notification, send it to the current notifier.
