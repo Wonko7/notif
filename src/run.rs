@@ -1,9 +1,10 @@
-use failure::{bail, Error, err_msg, format_err};use libzmq::{prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
+use failure::{bail, Error, err_msg, format_err};
+use libzmq::{ErrorKind, prelude::*, poll::*, auth::{CurveServerCreds, CurveClientCreds}, Heartbeat, Period, ServerBuilder, ClientBuilder};
 use signal_hook::{iterator::Signals, SIGHUP, SIGUSR1, SIGUSR2};
 use std::{collections::VecDeque, time::Duration};
 
 use crate::config::Config;
-use crate::notif::Notification;
+use crate::notif::{Notification, RequestType::*};
 
 // FIXME: needs empirical data
 static TIMEOUT: Duration = Duration::from_secs(5);
@@ -62,42 +63,61 @@ pub fn notify(config: Config, hostname: &str) -> Result<(), Error> {
     std::thread::spawn(move || {
         for signal in signals.forever() {
             match signal {
-                SIGUSR1          => tx.send("YIELD").unwrap(),
-                SIGHUP | SIGUSR2 => tx.send("SEIZE").unwrap(),
+                SIGUSR1          => tx.send(Yield).unwrap(),
+                SIGHUP | SIGUSR2 => tx.send(Seize).unwrap(),
                 _                => unreachable!() // since other signals aren't registered.
             }
         }
     });
+
+    // loop state:
+    let mut wait_for_ack   = true;
+    let mut replay_request = Seize;
 
     let mut poller = Poller::new();
     let mut events = Events::new();
     poller.add(&incoming_notif, PollId(0), READABLE)?;
 
     loop {
-        if let Ok(_) = poller.poll(&mut events, Period::Infinite) {
-            for _event in &events {
-                let msg = incoming_notif.recv_msg()?;
-                // router ACK'd our yield/seize request:
-                if msg.len() == 3 && msg.to_str()? == "ACK" {
-                    continue;
+        match poller.poll(&mut events, if wait_for_ack { Period::Finite(TIMEOUT) } else { Period::Infinite }) {
+            Ok(_) => {
+                for _event in &events {
+                    let msg = incoming_notif.recv_msg()?;
+                    // router ACK'd our yield/seize request:
+                    if msg.len() == 3 && msg.to_str()? == "ACK" {
+                        wait_for_ack = false;
+                        if verbose {
+                            println!("got ACK");
+                        }
+                        continue;
+                    }
+
+                    let keep_in_scope: String;
+                    let mut notif: Notification = bincode::deserialize(&msg.as_bytes())?;
+                    if notif.hostname != hostname {
+                        keep_in_scope = format!("@{}: {}", notif.hostname, notif.summary);
+                        notif.summary = keep_in_scope.as_str()
+                    };
+                    spawn_local_notif(&notif)?;
+
+                    if verbose {
+                        println!("notifying: {} {}", notif.summary, notif.body);
+                    }
                 }
-
-                let keep_in_scope: String;
-                let mut notif: Notification = bincode::deserialize(&msg.as_bytes())?;
-                if notif.hostname != hostname {
-                    keep_in_scope = format!("@{}: {}", notif.hostname, notif.summary);
-                    notif.summary = keep_in_scope.as_str()
-                };
-                spawn_local_notif(&notif)?;
-
+            },
+            Err(err) => {
+                if err.kind() == ErrorKind::Interrupted {
+                    if let Ok(interrupt_message) = interrupt_rx.recv() {
+                        wait_for_ack   = true;
+                        replay_request = interrupt_message;
+                    }
+                }
+                // spam request forever. TODO: make this configurable, could exit instead.
+                let interrupt_message = if replay_request == Seize { "SEIZE" } else { "YIELD" };
+                incoming_notif.send(interrupt_message)?;
                 if verbose {
-                    println!("notifying: {} {}", notif.summary, notif.body);
+                    println!("sent {}: {}", interrupt_message, &config.as_client.server.incoming);
                 }
-            }
-        } else if let Ok(interrupt_message) = interrupt_rx.recv() {
-            incoming_notif.send(interrupt_message)?;
-            if verbose {
-                println!("sent {}: {}", interrupt_message, &config.as_client.server.incoming);
             }
         }
     }

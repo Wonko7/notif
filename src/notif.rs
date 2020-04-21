@@ -7,3 +7,9 @@ pub struct Notification<'a> {
     pub body:     &'a str,
     pub urgency:  &'a str,
 }
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub enum RequestType {
+    Seize,
+    Yield,
+}
